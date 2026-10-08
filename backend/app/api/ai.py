@@ -37,7 +37,7 @@ async def chat_stream(
         event_gen(),
         media_type="text/event-stream",
         headers={
-            "Cache-Contral": "no-cache",
+            "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },

@@ -25,6 +25,10 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的登陆凭证"
         )
     user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="用户不存在"
+        )
     if user.status != 1:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="用户被禁用"
