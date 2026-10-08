@@ -22,7 +22,7 @@ def get_current_user(
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的登陆凭证"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="无效的登录凭证"
         )
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
