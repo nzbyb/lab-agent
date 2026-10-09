@@ -17,13 +17,12 @@ def get_user_info(user: User) -> UserResponse:
 
 
 def update_user_info(db: Session, user: User, data: UserUpdateRequest):
-    user.name = data.name
-    user.email = data.email
-    user.phone = data.phone
-    user.avatar = data.avatar
-    user_dict = data.model_dump(exclude_none=True, exclude={"role", "status"})
-    print(user_dict)
-    for field, value in user_dict.items():
+    # exclude_unset 才是「只更新请求里真的带了的字段」。
+    # 之前是先无条件给四个字段赋值、再拿 exclude_none 覆盖一遍——等于没防住：
+    # 属性那时已经被赋成 None 了，只改手机号就会让 name 撞 NOT NULL 报 500，
+    # 带上 name 时 email/avatar 又被静默清空。
+    payload = data.model_dump(exclude_unset=True, exclude={"role", "status"})
+    for field, value in payload.items():
         setattr(user, field, value)
     db.commit()
     db.refresh(user)

@@ -3,17 +3,23 @@ import time
 from pathlib import Path
 import uuid
 import shutil
-from fastapi import APIRouter, File, UploadFile
+from fastapi import APIRouter, Depends, File, UploadFile
+
 from app.common.exceptions import BusinessException
 from app.common.response import Response
 from app.config import ALLOWED_EXTENSIONS, BASE_DIR, MAX_FILE_SIZE, UPLOAD_DIR
+from app.dependencies.auth import get_current_user
+from app.models.user import User
 from app.schemas.file import FileResponse
 
 router = APIRouter(prefix="/files", tags=["文件管理"])
 
 
 @router.post("/upload")
-def upload(file: UploadFile = File(...)):
+def upload(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
     if not file.filename:
         raise BusinessException(message="文件名不能为空")
 

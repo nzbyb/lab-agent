@@ -1,13 +1,28 @@
+import logging
 from datetime import datetime
 import json
 
 from sqlalchemy.orm import Session
 from langchain_core.tools import tool
+from pydantic import ValidationError
 
 from app.common.exceptions import BusinessException
 from app.models.user import User
 from app.schemas.reservation import ReservationCreateRequest
 from app.services import kb_service, lab_service, equipment_service, reservation_service
+
+logger = logging.getLogger(__name__)
+
+
+def _tool_failed(tool_name: str) -> str:
+    """工具内部异常的统一兜底。
+
+    异常原文里可能带着 SQL 语句、绑定参数和绝对磁盘路径，
+    而工具的返回值会经 SSE 的 tool_end 预览直接送到前端。
+    所以原文只进服务端日志，回给模型和前端的一律是固定文案。
+    """
+    logger.exception("agent 工具 %s 执行失败", tool_name)
+    return json.dumps({"ok": False, "error": "操作失败，请稍后重试"}, ensure_ascii=False)
 
 
 def build_tools(db: Session, current_user: User):
@@ -17,8 +32,8 @@ def build_tools(db: Session, current_user: User):
         """查询实验室的资料文档（预约规则、安全规范、开放时间、设备使用说明）。query 是要检索的问题关键词。"""
         try:
             return kb_service.search(query) or "没有检索到相关的资料"
-        except Exception as exc:
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except Exception:
+            return _tool_failed("search_lab_docs")
 
     @tool
     def list_open_labs(keywords: str = "") -> str:
@@ -41,8 +56,8 @@ def build_tools(db: Session, current_user: User):
                 for item in page.list
             ]
             return json.dumps({"total": page.total, "labs": rows}, ensure_ascii=False)
-        except Exception as exc:
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except Exception:
+            return _tool_failed("list_open_labs")
 
     @tool
     def list_lab_equipments(lab_id: int, keywords: str = "") -> str:
@@ -67,8 +82,8 @@ def build_tools(db: Session, current_user: User):
             return json.dumps(
                 {"total": page.total, "equipments": rows}, ensure_ascii=False
             )
-        except Exception as exc:
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except Exception:
+            return _tool_failed("list_lab_equipments")
 
     @tool
     def list_lab_free_slots(lab_id: int, date: str, equipment_id: int | None = None) -> str:
@@ -91,8 +106,8 @@ def build_tools(db: Session, current_user: User):
             )
         except BusinessException as exc:
             return json.dumps({"ok": False, "error": exc.message}, ensure_ascii=False)
-        except Exception as exc:
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except Exception:
+            return _tool_failed("list_lab_free_slots")
 
     @tool
     def create_lab_reservation(
@@ -127,10 +142,21 @@ def build_tools(db: Session, current_user: User):
                 ensure_ascii=False,
             )
 
+        except ValidationError:
+            # A1 给日期/时间加了格式校验后，模型偶尔会送出 "2026-10-9" 这类不合规的值。
+            # 不单独接住的话会掉进下面的通用兜底，模型只拿到一句"操作失败"，
+            # 它就失去了自我纠正重试的线索。
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": "预约参数格式不正确：日期用 YYYY-MM-DD，时间用 HH:MM",
+                },
+                ensure_ascii=False,
+            )
         except BusinessException as exc:
             return json.dumps({"ok": False, "error": exc.message}, ensure_ascii=False)
-        except Exception as exc:
-            return json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False)
+        except Exception:
+            return _tool_failed("create_lab_reservation")
 
     @tool
     def get_today() -> str:

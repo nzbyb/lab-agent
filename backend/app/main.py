@@ -5,6 +5,8 @@ import traceback
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from slowapi.errors import RateLimitExceeded
+
 from app.config import UPLOAD_DIR
 
 from app.database import engine, Base
@@ -15,8 +17,10 @@ from app.common.exceptions import (
     business_exception_hadler,
     http_exception_hadler,
     validation_exception_hadler,
+    rate_limit_exception_hadler,
     global_exception_hadler,
 )
+from app.limiter import limiter
 from app.models.user import User
 from app.models.lab import Lab  # noqa: F401  必须导入，否则建表时发现不了模型
 from app.models.equipment import Equipment
@@ -64,6 +68,10 @@ app.add_exception_handler(BusinessException, business_exception_hadler)
 app.add_exception_handler(HTTPException, http_exception_hadler)
 app.add_exception_handler(RequestValidationError, validation_exception_hadler)
 app.add_exception_handler(Exception, global_exception_hadler)
+
+# slowapi 要靠 app.state.limiter 找计数器；漏了这行被装饰的路由会在运行时报错
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exception_hadler)
 
 Base.metadata.create_all(bind=engine)
 

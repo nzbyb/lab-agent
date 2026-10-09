@@ -1,10 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.user import UserResponse
 
 
 class LoginRequest(BaseModel):
-    username: str
+    username: str = Field(max_length=50)
     password: str
 
 
@@ -14,6 +14,6 @@ class LoginResponse(BaseModel):
 
 
 class RegisterRequest(BaseModel):
-    username: str
+    username: str = Field(max_length=50)
     password: str
-    name: str | None = None
+    name: str | None = Field(default=None, max_length=50)

@@ -61,6 +61,8 @@
           v-model="input"
           type="textarea"
           :rows="2"
+          :maxlength="MAX_MESSAGE_CHARS"
+          show-word-limit
           placeholder="问问实验室怎么预约,开放时间..."
           @keydown.enter.exact.prevent="handleSend"
         >
@@ -87,6 +89,10 @@ const input = ref('')
 const loading = ref(false)
 const boxRef = ref()
 
+// 跟后端 app/schemas/ai.py 的 _MAX_USER_CONTENT 对齐。
+// 两头都卡住，超长消息才会在输入框就被拦下来，而不是发出去吃一个 422。
+const MAX_MESSAGE_CHARS = 2000
+
 const scrollToBottom = () => {
   nextTick(() => {
     const elem = boxRef.value
@@ -111,10 +117,20 @@ const handleSend = async () => {
     steps: [] // 过程流水，不进下次 history
   })
   messages.value.push(assistant)
+  const assistantIndex = messages.value.length - 1
 
+  // 只回传最近 20 条：后端也只把最近 20 条送进模型，
+  // 传全量既白费流量，也会让请求体随对话越滚越大。
+  // 空白 content 必须滤掉——不止刚 push 的这个空助手，上一轮出错留下的
+  // 空气泡也一样，留着会让之后每一次请求都吃 422，对话就再也发不出去了。
   const history = messages.value
-    .filter((item) => item.role === 'user' || item.role === 'assistant')
-    .slice(0, -1) // 去掉刚插入的空助手，避免把空 content 送回去
+    .filter(
+      (item) =>
+        (item.role === 'user' || item.role === 'assistant') &&
+        typeof item.content === 'string' &&
+        item.content.trim()
+    )
+    .slice(-20)
     // 只保留 role/content; status、steps 丢掉
     .map(({ role, content }) => ({ role, content }))
 
@@ -158,6 +174,11 @@ const handleSend = async () => {
   } finally {
     loading.value = false
     assistant.status = ''
+    // 这一轮什么都没产出（网络断了，或后端第一条就是 error）就把空气泡收掉，
+    // 免得对话里留一个空白框。有 steps 的留着——那是这轮真实发生过的过程。
+    if (!assistant.content && !assistant.steps?.length) {
+      messages.value.splice(assistantIndex, 1)
+    }
     scrollToBottom()
   }
 }

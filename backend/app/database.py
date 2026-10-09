@@ -3,7 +3,9 @@ from sqlalchemy import create_engine, DateTime
 from app.config import settings
 from datetime import datetime
 
-engine = create_engine(settings.DATABASE_URL)
+# hide_parameters 让 SQLAlchemy 不要在异常消息里带上绑定参数，
+# 不然一旦有异常冒到日志或响应里，就等于把用户数据一起泄出去了。
+engine = create_engine(settings.DATABASE_URL, hide_parameters=True)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False)
 

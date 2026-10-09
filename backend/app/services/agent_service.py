@@ -42,6 +42,11 @@ TOOL_LABELS = {
 }
 
 
+# 真正送进模型的对话条数上限。前端传上来的是整段历史，
+# 不截断的话上下文会随对话无限膨胀，既慢又贵。
+_MAX_HISTORY_MESSAGES = 20
+
+
 def _build_history(data: ChatRequest) -> list:
     history = []
     for message in data.messages:
@@ -51,7 +56,9 @@ def _build_history(data: ChatRequest) -> list:
             history.append(AIMessage(content=message.content.strip()))
     if not history:
         raise BusinessException(message="请输入您的对话内容")
-    return history
+    # 截断放在过滤之后：空消息已经先被丢掉了，20 条指的是真正进模型的那个数。
+    # 只保留最近的——越靠后的轮次对当前这问越相关。
+    return history[-_MAX_HISTORY_MESSAGES:]
 
 
 def _tool_output_preview(output: Any, limit: int = 200):
@@ -133,6 +140,17 @@ def build_agent(db: Session, current_user: User):
         model=settings.LLM_MODEL,
         temperature=0,
         streaming=True,
+        # 封住单次回复的长度。不设的话模型可以一直往外吐，请求既慢又贵。
+        #
+        # 必须走 extra_body，不能直接写 max_tokens=：langchain-openai 把
+        # max_tokens 改名成了 max_completion_tokens，构造参数和 model_kwargs
+        # 都会在发请求前被改名。DeepSeek 只认 max_tokens，收到
+        # max_completion_tokens 不报错、直接忽略——上限等于没设。
+        # extra_body 是在改名之后合并进 HTTP 请求体的，能原样送到。
+        #
+        # 这段的前提是 LLM_BASE_URL 指的是 DeepSeek 兼容接口。换成标准
+        # OpenAI 的模型时，把 extra_body 换回 max_tokens= 即可。
+        extra_body={"max_tokens": 1024},
     ).bind_tools(tools)
 
     async def agent_node(state: MessagesState):

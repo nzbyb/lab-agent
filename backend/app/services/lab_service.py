@@ -20,7 +20,9 @@ def get_lab_page_list(
     if keywords:
 
         query = query.filter(Lab.name.ilike(f"%{keywords}%"))
-    if status:
+    # 必须写 is not None：0 是合法状态（已关闭），用 if status 会被当成"没传"，
+    # 想看关闭中的实验室反而拿到全部。
+    if status is not None:
         query = query.filter(Lab.status == status)
     total = query.count()
     items = (

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from app.common.response import Response
 from app.models.lab import Lab
@@ -15,8 +15,10 @@ router = APIRouter(prefix="/lab", tags=["实验室信息接口"])
 
 @router.get("/list")
 def get_lab_list(
-    page: int = 1,
-    page_size: int = 10,
+    page: int = Query(1, ge=1),
+    # 上界不能省：page_size 会直接进 LIMIT，传个几百万就是一次全表读。
+    # 100 是前端分页器实际会用到的最大值（设备页一次拉全部实验室）。
+    page_size: int = Query(10, ge=1, le=100),
     keywords: str | None = None,
     status: int | None = None,
     current_user: Lab = Depends(get_current_user),

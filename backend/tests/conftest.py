@@ -54,6 +54,24 @@ import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app.database import Base, SessionLocal, engine  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# 第二道保险丝：查 engine 真正连上的库，而不是我们以为改成的库名。
+#
+# 上面那句 set(database="lab_agent_test") 只改了 URL 字符串。如果 app.database
+# 在更早的时候就已经被 import 过（`pytest -p <插件>` 加载插件早于 conftest，
+# 插件里任何一句 import app.xxx 都会触发），create_engine 已经按 .env 建好了，
+# 模块进了 sys.modules 就不会再建第二次——那上面那句 os.environ 覆盖等于没写，
+# 这里的 engine 连的还是生产库，后面 _truncate_all 清的就是真数据。
+# 这事已经真实发生过一次，所以必须校验 engine 本身。
+# ---------------------------------------------------------------------------
+if not (engine.url.database or "").endswith("_test"):
+    raise RuntimeError(
+        f"engine 实际连的是 {engine.url.database!r}，不是测试库，拒绝运行测试。"
+        "（多半是被 import 得太早，DATABASE_URL 覆盖没赶上 create_engine）"
+    )
+
+from app.limiter import limiter  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models.equipment import Equipment  # noqa: E402
 from app.models.lab import Lab  # noqa: E402
@@ -86,6 +104,18 @@ def _clean_database():
     _truncate_all()
     yield
     _truncate_all()
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    """限流计数器是进程内、跨用例共享的状态，必须跟着用例一起重置。
+
+    不重置的话前面的用例会把登录额度耗光，后面的用例一登录就吃 429，
+    变成「单跑绿、整套跑红」的假故障。
+    """
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 @pytest.fixture
