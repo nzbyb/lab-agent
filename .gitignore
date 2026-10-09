@@ -77,3 +77,10 @@ desktop.ini
 
 # ---------- 前端构建脚本产物 ----------
 frontend/scripts/*.timestamp-*.mjs
+
+# ---------- 误放在根目录的前端清单 ----------
+# 真正的前端依赖清单在 frontend/package.json。
+# 根目录这两个文件是早前在仓库根误跑 npm install 留下的碎片，
+# 只含零星几个包、连 name 和 scripts 都没有，留着会误导人，直接忽略。
+/package.json
+/package-lock.json
