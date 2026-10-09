@@ -1,11 +1,13 @@
 import asyncio
+from contextlib import contextmanager
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.reservation import Reservation
@@ -60,6 +62,45 @@ def _busy_query(db: Session, lab_id: int, date: str, equipment_id: int | None):
     return query.filter(Reservation.equipment_id.is_(None))
 
 
+# 抢锁最多等多久（秒）。等不到说明同一时段正被大量并发抢占，直接让用户重试。
+_BOOKING_LOCK_TIMEOUT = 5
+
+
+def _booking_lock_name(lab_id: int, date: str, equipment_id: int | None) -> str:
+    """同一实验室、同一天、同一个预约目标共用一个锁名。
+
+    约整间实验室和约某台设备用不同的锁——它们在业务上互不冲突，
+    没必要互相排队。0 是"整间实验室"的占位，因为锁名不能为空。
+    """
+    return f"lab_agent:book:{lab_id}:{date}:{equipment_id or 0}"
+
+
+@contextmanager
+def _booking_lock(lab_id: int, date: str, equipment_id: int | None):
+    """把「查冲突 + 插入」串成临界区。
+
+    没有这把锁时，两个请求可以同时查到"没有冲突"，然后双双插入成功，
+    同一时段就出现两条预约。这里用 MySQL 的命名锁排掉这个窗口。
+
+    锁是挂在连接上的。Session 一旦 commit 就会把连接还回连接池，
+    再执行 RELEASE_LOCK 很可能落到另一条连接上，锁就永远留在原来那条连接里了。
+    所以这里单独占用一条连接专职持锁，用完立刻释放并归还。
+    """
+    name = _booking_lock_name(lab_id, date, equipment_id)
+    conn = engine.connect()
+    try:
+        acquired = conn.execute(
+            text("SELECT GET_LOCK(:name, :timeout)"),
+            {"name": name, "timeout": _BOOKING_LOCK_TIMEOUT},
+        ).scalar()
+        if acquired != 1:
+            raise BusinessException(message="当前预约的人较多，请稍后重试")
+        yield
+    finally:
+        conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": name})
+        conn.close()
+
+
 def create_reservation(db: Session, current_user: User, data: ReservationCreateRequest):
     now = datetime.now()
     current_date = now.strftime("%Y-%m-%d")
@@ -90,27 +131,35 @@ def create_reservation(db: Session, current_user: User, data: ReservationCreateR
         if equipment.status != 1:
             raise BusinessException(message="实验室设备正在维修")
 
-    # 同一实验室、同一天，已有"待审核/已通过"的预约与本次时间段重叠
-    # 约设备时只跟同一台设备的预约比；约整个实验室时只跟实验室级预约比
-    busy = _busy_query(db, data.lab_id, data.date, data.equipment_id).filter(
-        Reservation.start_time < data.end_time,
-        Reservation.end_time > data.start_time,
-    )
-    if busy.first():
-        raise BusinessException(message="实验室已被预约")
+    # 上面的校验查询已经开启了事务，MySQL 的 REPEATABLE READ 会在那一刻固定读快照。
+    # 不先结束它，下面拿到锁之后读到的仍是旧数据，照样会漏掉别人刚提交的预约。
+    user_id = current_user.id  # rollback 会过期 ORM 对象，先把要用的值取出来
+    db.rollback()
 
-    reservation_model = Reservation(
-        user_id=current_user.id,
-        lab_id=data.lab_id,
-        equipment_id=data.equipment_id,
-        date=data.date,
-        start_time=data.start_time,
-        end_time=data.end_time,
-        remark=data.remark,
-        status=0,
-    )
-    db.add(reservation_model)
-    db.commit()
+    # 「查冲突」和「插入」之间必须互斥，否则两个并发请求会同时通过检查。
+    # 用不到加锁的校验都放在临界区外面，减少排队时间。
+    with _booking_lock(data.lab_id, data.date, data.equipment_id):
+        # 同一实验室、同一天，已有"待审核/已通过"的预约与本次时间段重叠
+        # 约设备时只跟同一台设备的预约比；约整个实验室时只跟实验室级预约比
+        busy = _busy_query(db, data.lab_id, data.date, data.equipment_id).filter(
+            Reservation.start_time < data.end_time,
+            Reservation.end_time > data.start_time,
+        )
+        if busy.first():
+            raise BusinessException(message="实验室已被预约")
+
+        reservation_model = Reservation(
+            user_id=user_id,
+            lab_id=data.lab_id,
+            equipment_id=data.equipment_id,
+            date=data.date,
+            start_time=data.start_time,
+            end_time=data.end_time,
+            remark=data.remark,
+            status=0,
+        )
+        db.add(reservation_model)
+        db.commit()
 
 
 def get_free_slots(
