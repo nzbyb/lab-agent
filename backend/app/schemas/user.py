@@ -22,7 +22,10 @@ class UserResponse(BaseModel):
 
 class UserCreateRequest(BaseModel):
     username: str = Field(max_length=_NAME_MAX)
-    password: str = "123"
+    # 原本是 password: str = "123"——不传密码就能建出一个拿 "123" 就能登录的账号。
+    # 改成必填。只写「必填」还不够：password: "" 依然能过，等于还是能建出
+    # 空密码的可登录账号，所以补一个下界，跟前端新建用户表单的规则（3-10 位）对齐。
+    password: str = Field(min_length=3)
     name: str | None = Field(default=None, max_length=_NAME_MAX)
     email: str | None = Field(default=None, max_length=_NAME_MAX)
     phone: str | None = Field(default=None, max_length=_NAME_MAX)
