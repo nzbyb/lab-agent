@@ -80,7 +80,10 @@ def update_equipment(db: Session, equipment_id: int, data: EquipmentUpdateReques
     db.refresh(equipment)
     res = EquipmentResponse.model_validate(equipment)
     res.lab_name = equipment.lab.name if equipment.lab else None
-    return EquipmentResponse.model_validate(equipment)
+    # 必须返回上面那个 res。重新 model_validate 会丢刚设好的 lab_name，
+    # 让更新接口的返回值恒为 lab_name=None（前端因为更新后会重新拉列表所以看不出来，
+    # 但这个接口的返回值是错的）。
+    return res
 
 
 def delete_equipment(db: Session, equipment_id: int):

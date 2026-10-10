@@ -32,8 +32,16 @@ def get_collection() -> Collection:
     KB_DIR.mkdir(parents=True, exist_ok=True)
     CHROMA_DIR.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
+    # 必须显式传 embedding function，不能留 None。
+    # 传 None 时 chromadb 的冲突校验整段被跳过（collection_configuration.py 里那句
+    # `if embedding_function is not None`），所以现在能跑——靠的是 data/chroma 里持久化的
+    # known 配置（name=sentence_transformer, model_name=BAAI/bge-small-zh-v1.5）被自动恢复。
+    # 但一旦 data/chroma 被删掉重建，就没有持久化配置可继承，会退回 chromadb 自带的
+    # 英文默认模型（all-MiniLM-L6-v2），中文检索静默劣化、且不报任何错。
+    # 传进去的实例与持久化配置同名（name() 都是 "sentence_transformer"）且参数逐字段相同
+    # （device="cpu"、normalize_embeddings=False 都是该类的默认值），所以不会触发冲突。
     col = client.get_or_create_collection(
-        name="lab_kb", embedding_function=_embedding_fn
+        name="lab_kb", embedding_function=get_embedding_fn()
     )
     if col.count() == 0:
         ids = []
@@ -77,7 +85,6 @@ def search(query: str):
         name = metas.get("source") or ""
         score_parts.append({"score": score, "content": f"[{name}]\n{doc}"})
 
-    print(f"检索出来的 score_past: {score_parts}")
     score_parts.sort(key=lambda x: x["score"], reverse=True)
     final_parts = [item["content"] for item in score_parts[:2]]
     return "\n\n".join(final_parts)

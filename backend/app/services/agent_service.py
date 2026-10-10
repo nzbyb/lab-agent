@@ -37,6 +37,7 @@ TOOL_LABELS = {
     "search_lab_docs": "检索实验室知识库",
     "list_open_labs": "查询开放的实验室",
     "list_lab_equipments": "查询实验室设备",
+    "list_lab_free_slots": "查询空闲时段",
     "create_lab_reservation": "创建预约单",
     "get_today": "获取今天的日期",
 }

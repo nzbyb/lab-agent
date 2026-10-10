@@ -16,6 +16,7 @@
     A7  个人资料部分更新    -> TestPartialProfileUpdate
     A8  字符串长度上限      -> TestStringFieldLengthCaps
     B2  工具异常不泄漏原文  -> TestToolErrorMasking
+    B3  已关闭实验室不列设备 -> TestClosedLabEquipmentVisibility
 """
 
 import json
@@ -570,3 +571,75 @@ class TestEquipmentConflictScope:
             db, make_user(), booking(lab.id, equipment_id=second.id)
         )
         assert db.query(Reservation).count() == 2
+
+
+class TestClosedLabEquipmentVisibility:
+    """B3：agent 的 list_lab_equipments 以前不判实验室状态。
+
+    同批的 list_open_labs 硬编码 status=1、list_lab_free_slots 走 get_free_slots
+    也会抛「实验室未开放预约」，只有它把 lab_id 直接透传给
+    equipment_service.get_equipment_page_list（那个函数只按 lab_id/keywords 过滤）。
+    结果是模型能列出已关闭实验室的设备、带用户走完确认流程，最后才在
+    create_lab_reservation 拿到「实验室未开放预约」——和前端入口一样，
+    变成「填完才被拒」。
+
+    这道判断只能待在工具层：get_equipment_page_list 同时被 HTTP 接口用着，
+    而前端设备页**需要**能查看已关闭实验室的设备清单（只读，预约按钮由前端禁用）。
+    """
+
+    def test_closed_lab_returns_no_equipment(
+        self, db, make_user, make_lab, make_equipment
+    ):
+        from app.services import agent_tools
+
+        lab = make_lab(status=0)
+        make_equipment(lab_id=lab.id)
+        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+
+        result = json.loads(tools["list_lab_equipments"].invoke({"lab_id": lab.id}))
+
+        assert result["ok"] is False
+        assert result["error"] == "实验室未开放预约"
+
+    def test_open_lab_still_lists_equipment(
+        self, db, make_user, make_lab, make_equipment
+    ):
+        """别拦过头：开放中的实验室照常列设备"""
+        from app.services import agent_tools
+
+        lab = make_lab(status=1)
+        eq = make_equipment(lab_id=lab.id)
+        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+
+        result = json.loads(tools["list_lab_equipments"].invoke({"lab_id": lab.id}))
+
+        assert result["total"] == 1
+        assert result["equipments"][0]["id"] == eq.id
+
+    def test_missing_lab_still_says_not_found(self, db, make_user):
+        """新加的校验不能把 lab_service.get_lab 的「实验室不存在」吞成笼统失败"""
+        from app.services import agent_tools
+
+        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+        result = json.loads(tools["list_lab_equipments"].invoke({"lab_id": 999999}))
+
+        assert result["ok"] is False
+        assert result["error"] == "实验室不存在"
+
+    def test_http_equipment_list_still_allows_closed_lab(
+        self, client, make_user, make_lab, make_equipment, auth_headers
+    ):
+        """守住边界：守卫只在 agent 工具层，HTTP 接口必须还能查已关闭实验室的设备。
+
+        前端设备页就是靠这个接口渲染的。哪天有人图省事把判断塞进
+        get_equipment_page_list，已关闭实验室的设备页会直接空掉——这条会先红。
+        """
+        lab = make_lab(status=0)
+        make_equipment(lab_id=lab.id)
+
+        resp = client.get(
+            "/api/equipment/list",
+            params={"lab_id": lab.id},
+            headers=auth_headers(make_user()),
+        )
+        assert resp.json()["data"]["total"] == 1

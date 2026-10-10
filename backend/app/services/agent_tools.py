@@ -61,8 +61,17 @@ def build_tools(db: Session, current_user: User):
 
     @tool
     def list_lab_equipments(lab_id: int, keywords: str = "") -> str:
-        """查询某个实验室下的设备列表。lab_id 是实验室 ID（必填），keywords 是设备名称关键字，可以为空字符串。"""
+        """查询某个实验室下的设备列表。lab_id 是实验室 ID（必填），keywords 是设备名称关键字，可以为空字符串。实验室已关闭时查不到设备。"""
         try:
+            lab = lab_service.get_lab(db, int(lab_id))
+            # 和 list_open_labs（硬编码 status=1）、list_lab_free_slots（get_free_slots
+            # 里有同样的判断）保持一致：已关闭的实验室不列设备。
+            # 这个判断只能放在工具层，不能放进 equipment_service.get_equipment_page_list——
+            # 那个函数同时被 HTTP 接口用着，而前端设备页**需要**能查看已关闭实验室的设备清单。
+            # 不加这道判断的话，用户报一个已关闭的 lab_id，模型照样能列出设备、走完确认流程，
+            # 最后才在 create_lab_reservation → create_reservation 拿到「实验室未开放预约」。
+            if lab.status != 1:
+                raise BusinessException(message="实验室未开放预约")
             keywords = keywords.strip() or None
             page = equipment_service.get_equipment_page_list(
                 db, page=1, page_size=10, lab_id=int(lab_id), keywords=keywords
@@ -82,6 +91,8 @@ def build_tools(db: Session, current_user: User):
             return json.dumps(
                 {"total": page.total, "equipments": rows}, ensure_ascii=False
             )
+        except BusinessException as exc:
+            return json.dumps({"ok": False, "error": exc.message}, ensure_ascii=False)
         except Exception:
             return _tool_failed("list_lab_equipments")
 
