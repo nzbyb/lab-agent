@@ -17,6 +17,8 @@
     A8  字符串长度上限      -> TestStringFieldLengthCaps
     B2  工具异常不泄漏原文  -> TestToolErrorMasking
     B3  已关闭实验室不列设备 -> TestClosedLabEquipmentVisibility
+    B4  新建用户必须给密码  -> TestCreateUserPasswordRequired
+    B5  出错信息不回显输入  -> TestErrorMessagesHideUserData
 """
 
 import json
@@ -24,18 +26,22 @@ from datetime import datetime, timedelta
 
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.common.exceptions import BusinessException
 from app.models.reservation import Reservation
+from app.models.user import User
 from app.schemas.ai import ChatMessage, ChatRequest
-from app.schemas.auth import RegisterRequest
-from app.schemas.lab import LabCreateRequest
+from app.schemas.auth import LoginRequest, RegisterRequest
+from app.schemas.equipment import EquipmentCreateRequest, EquipmentUpdateRequest
+from app.schemas.lab import LabCreateRequest, LabUpdateRequest
 from app.schemas.reservation import (
     ReservationCreateRequest,
     normalize_date,
     normalize_time,
 )
-from app.schemas.user import UserUpdateRequest
+from app.schemas.user import UserCreateRequest, UserUpdateRequest
 from app.services import reservation_service, user_service
 from app.services.agent_service import _build_history
 
@@ -529,6 +535,90 @@ class TestStringFieldLengthCaps:
         resp = client.post("/api/lab", json={"name": "名" * 51}, headers=headers)
         assert resp.status_code == 422
 
+    # 下面几条是同一件事（上限跟着列宽走）在其它 schema 上的补齐。
+    # 之前只有 lab 建库和 user 改名两处有用例，equipment / 建用户 / 登录 /
+    # 注册 / 改实验室这几处的 Field(max_length=...) 都是「写是写了，没人守」。
+
+    def test_user_create_fields_capped(self):
+        with pytest.raises(ValidationError):
+            UserCreateRequest(username="u" * 51, password="pw123456")
+        for field in ("name", "email", "phone", "avatar"):
+            with pytest.raises(ValidationError, match=field):
+                UserCreateRequest(
+                    username="normal", password="pw123456", **{field: "字" * 51}
+                )
+        with pytest.raises(ValidationError, match="role"):
+            UserCreateRequest(username="normal", password="pw123456", role="r" * 51)
+
+    def test_equipment_fields_capped(self):
+        with pytest.raises(ValidationError, match="name"):
+            EquipmentCreateRequest(lab_id=1, name="设" * 51)
+        with pytest.raises(ValidationError, match="description"):
+            EquipmentCreateRequest(lab_id=1, name="normal", description="字" * 501)
+        with pytest.raises(ValidationError, match="img"):
+            EquipmentCreateRequest(lab_id=1, name="normal", img="i" * 201)
+        with pytest.raises(ValidationError, match="spec"):
+            EquipmentCreateRequest(lab_id=1, name="normal", spec="s" * 101)
+
+    def test_equipment_update_fields_capped(self):
+        """更新接口的字段全是可选的，得一个一个单独传才触发得到校验"""
+        with pytest.raises(ValidationError, match="name"):
+            EquipmentUpdateRequest(name="设" * 51)
+        with pytest.raises(ValidationError, match="description"):
+            EquipmentUpdateRequest(description="字" * 501)
+        with pytest.raises(ValidationError, match="img"):
+            EquipmentUpdateRequest(img="i" * 201)
+        with pytest.raises(ValidationError, match="spec"):
+            EquipmentUpdateRequest(spec="s" * 101)
+
+    def test_equipment_boundary_lengths_accepted(self):
+        """卡在上限上的长度必须能过——上限写小一位也是 bug"""
+        EquipmentCreateRequest(
+            lab_id=1,
+            name="设" * 50,
+            description="字" * 500,
+            img="i" * 200,
+            spec="s" * 100,
+        )
+        EquipmentUpdateRequest(
+            name="设" * 50,
+            description="字" * 500,
+            img="i" * 200,
+            spec="s" * 100,
+        )
+
+    def test_login_and_register_fields_capped(self):
+        with pytest.raises(ValidationError, match="username"):
+            LoginRequest(username="u" * 51, password="pw123456")
+        with pytest.raises(ValidationError, match="username"):
+            RegisterRequest(username="u" * 51, password="pw123456")
+        with pytest.raises(ValidationError, match="name"):
+            RegisterRequest(username="normal", password="pw123456", name="名" * 51)
+
+    def test_lab_update_fields_capped(self):
+        with pytest.raises(ValidationError, match="name"):
+            LabUpdateRequest(name="名" * 51)
+        with pytest.raises(ValidationError, match="description"):
+            LabUpdateRequest(description="字" * 501)
+        with pytest.raises(ValidationError, match="img"):
+            LabUpdateRequest(img="i" * 101)
+        with pytest.raises(ValidationError, match="location"):
+            LabUpdateRequest(location="位" * 101)
+        with pytest.raises(ValidationError, match="open_time"):
+            LabUpdateRequest(open_time="0" * 21)
+        with pytest.raises(ValidationError, match="close_time"):
+            LabUpdateRequest(close_time="0" * 21)
+
+    def test_lab_update_boundary_lengths_accepted(self):
+        LabUpdateRequest(
+            name="名" * 50,
+            description="字" * 500,
+            img="i" * 100,
+            location="位" * 100,
+            open_time="0" * 20,
+            close_time="0" * 20,
+        )
+
 
 class TestEquipmentConflictScope:
     """A2r：设备冲突的范围只由 equipment_id 决定，不再叠一层 lab_id。
@@ -643,3 +733,107 @@ class TestClosedLabEquipmentVisibility:
             headers=auth_headers(make_user()),
         )
         assert resp.json()["data"]["total"] == 1
+
+
+class TestCreateUserPasswordRequired:
+    """B4：POST /api/user 以前不传密码也能建号，建出来的账号拿 "123" 就能登录。
+
+    这是管理员给别人开账号的入口，等于把默认口令写死进了代码。ce94ada 把
+    password 从 `str = "123"` 改成必填。但只写「必填」还挡不住空串——
+    UserCreateRequest(password="") 照样通过必填校验，还是能开出一个空密码的
+    可登录账号，所以补了一道 min_length=3 的下界，跟前端新建用户表单
+    （3-10 位）的规则对齐。
+
+    前面几条是 schema 层的边界，最后一条才是真正算数的：打真接口，并且确认库里
+    没多出账号。校验层拦住了、但 service 层又建了个人的情况，只有这条能发现。
+    """
+
+    def test_missing_password_rejected(self):
+        with pytest.raises(ValidationError):
+            UserCreateRequest(username="normal")
+
+    def test_empty_password_rejected(self):
+        """「必填」挡不住空串：password="" 依然能过必填校验"""
+        with pytest.raises(ValidationError):
+            UserCreateRequest(username="normal", password="")
+
+    def test_too_short_password_rejected(self):
+        with pytest.raises(ValidationError):
+            UserCreateRequest(username="normal", password="ab")
+
+    def test_minimum_password_accepted(self):
+        assert UserCreateRequest(username="normal", password="abc").password == "abc"
+
+    def test_api_rejects_user_without_password(
+        self, client, db, make_user, auth_headers
+    ):
+        """不传密码的建号请求必须是 422，而且库里不能多出账号。
+
+        「是 422」这个断言在这里是有信息量的：BusinessException 会被全局处理器
+        包成 HTTP 200 + body.code，真正保留 422 的只有参数校验这一条路径。
+        """
+        admin = make_user(username="root", role="admin")
+        before = db.query(User).count()
+
+        resp = client.post(
+            "/api/user", json={"username": "newbie"}, headers=auth_headers(admin)
+        )
+
+        assert resp.status_code == 422
+        assert db.query(User).count() == before
+
+
+class TestErrorMessagesHideUserData:
+    """B5：出错信息里不能带上用户提交的内容。
+
+    两条会漏的路径各守一条用例。
+
+    第一条是 SQLAlchemy 的默认行为：数据库异常的消息里会原样附上绑定参数
+    （`[parameters: (...)]`）。这个异常一旦冒到日志或者响应里，等于把用户数据
+    一起泄出去。database.py 用 create_engine(..., hide_parameters=True) 关掉它。
+
+    这里刻意不断言「配置项等于 True」——那种写法只能证明我们写了这一行，证明不了
+    它真的生效，把那行删掉用例照样绿。所以改成主动造一个带哨兵值的 SQL 错误，
+    再去读异常原文。
+    """
+
+    SENTINEL = "CANARY-9f3a2b-MUST-NOT-LEAK"
+
+    def test_db_error_does_not_leak_bound_parameters(self, db):
+        with pytest.raises(SQLAlchemyError) as excinfo:
+            db.execute(
+                text("SELECT * FROM table_that_does_not_exist WHERE x = :p"),
+                {"p": self.SENTINEL},
+            )
+        message = str(excinfo.value)
+
+        # 先确认抓到的确实是这条 SQL 的异常，否则下面两条可能是在验一个空字符串
+        assert "table_that_does_not_exist" in message
+        # 关键：绑定参数没有跟着异常一起泄漏
+        assert self.SENTINEL not in message
+        # 正向对照：参数是被主动屏蔽的，不是恰好没打印。
+        # 少了这条，哪天 hide_parameters 被去掉，这个用例可能照样绿。
+        # 实测两种取值下的异常原文（Connection 和 Session 两条路径结果一致）：
+        #   开 -> [SQL parameters hidden due to hide_parameters=True]
+        #   关 -> [parameters: {'p': 'CANARY-9f3a2b-MUST-NOT-LEAK'}]  <- 哨兵值就在这
+        assert "hide_parameters" in message
+
+    def test_validation_error_does_not_echo_input(
+        self, client, make_user, auth_headers
+    ):
+        """参数校验失败的响应是固定文案，不回显提交上来的内容。
+
+        回显看着无害，实际是把用户输入原样反射回去（超长的、带控制字符的、
+        带 HTML 的都可能）。validation_exception_hadler 里那句写死的
+        「请求参数校验错误」就是防这个的。
+
+        哨兵值故意放在**触发校验失败的那个字段**上：只有它才会出现在
+        pydantic 的错误详情里，一旦有人把处理器改成返回 exc.errors()，这条先红。
+        """
+        headers = auth_headers(make_user(username="root", role="admin"))
+        canary = "echo-canary-" + "x" * 60  # 72 字符，必然超上限
+
+        resp = client.post("/api/lab", json={"name": canary}, headers=headers)
+
+        assert resp.status_code == 422
+        assert canary not in resp.text
