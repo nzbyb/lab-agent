@@ -1,7 +1,7 @@
 <template>
   <div class="login-container">
     <div class="login-box">
-      <h1 font-size: 28px>实验室预约系统</h1>
+      <h1>实验室预约系统</h1>
       <div style="margin-top: 5px; margin-bottom: 30px">基于Ai Agent智能预约系统</div>
 
       <el-form ref="formRef" :rules="rules" :model="form" label-width="0px" style="width: 100%">
@@ -94,6 +94,12 @@ const login = async () => {
   display: flex;
   justify-content: center;
   align-items: center;
+}
+/* 原本这个字号写成 <h1 font-size: 28px>，是个不生效的无效 HTML 属性。
+   巧合的是 h1 默认 2em、body 是 14px，算下来正好 28px，所以看起来"没坏"。
+   这里显式写出来，别再靠巧合。 */
+.login-box h1 {
+  font-size: 28px;
 }
 .login-box {
   width: 380px;

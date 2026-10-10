@@ -1,21 +1,49 @@
 * {
-    box-sizing: border-box;
+  box-sizing: border-box;
 }
 
 html,
 body,
 #app {
-    width: 100%;
-    min-height: 100%;
-    margin: 0;
-    padding: 0;
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * 设计变量
+ *
+ * 改造前，颜色、圆角、间距全是散在各页面内联 style 里的字面量，同一个语义
+ * 有好几种写法：纯白既写 white 又写 #fff，主文字色既写 #333 又写 #303133，
+ * 浅色底有 #f5f5f5 / #f5f7fa / #fafafa / #f4f5ff 四种。统一收到这里，
+ * 以后调主题只动这一个块。
+ * 前缀用 app-，避免和 Element Plus 的 --el-* 变量撞名。
+ * ------------------------------------------------------------------------- */
+:root {
+  /* 文字：正文 / 次要 / 占位 */
+  --app-text-primary: #303133;
+  --app-text-secondary: #909399;
+  --app-text-placeholder: #8c939d;
+
+  /* 面与底 */
+  --app-bg-page: #f5f7fa;
+  --app-bg-muted: #f5f5f5;
+
+  /* 圆角 */
+  --app-radius-md: 6px;
+
+  /* 间距 */
+  --app-space-sm: 10px;
+  --app-space-md: 16px;
+  --app-space-lg: 30px;
 }
 
 body {
-    font-family: "Microsoft YaHei", sans-serif;
-    font-size: 14px;
-    color: #303133;
-    background-color: #f5f7fa;
+  font-family: 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  color: var(--app-text-primary);
+  background-color: var(--app-bg-page);
 }
 
 /* 清除标题默认边距 */
@@ -26,30 +54,117 @@ h4,
 h5,
 h6,
 p {
-    margin: 0;
+  margin: 0;
 }
 
 /* 清除列表默认样式 */
 ul,
 ol {
-    margin: 0;
-    padding: 0;
-    list-style: none;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
 /* 链接 */
 a {
-    color: inherit;
-    text-decoration: none;
+  color: inherit;
+  text-decoration: none;
 }
 
 /* 图片 */
 img {
-    max-width: 100%;
+  max-width: 100%;
 }
 
 /* 清除 el-dropdown 触发元素获得焦点时的浏览器默认黑边 */
 .el-dropdown .el-tooltip__trigger:focus,
 .el-dropdown .el-tooltip__trigger:focus-visible {
-    outline: none;
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+ * 公共类
+ *
+ * 下面这几串样式改造前被逐字复制在多个页面里：卡片标题 11 处、搜索条件行 6 处、
+ * 搜索输入框 4 处、搜索下拉框 3 处、分页容器 7 处、弹窗表单 4 处。
+ * 收成类名，改一次全局生效。
+ * ------------------------------------------------------------------------- */
+
+/* 卡片左上角的标题 */
+.app-card-title {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* 列表页顶部的搜索条件行 */
+.app-search-bar {
+  margin-bottom: var(--app-space-sm);
+}
+
+/* 搜索条件行里的输入框 */
+.app-search-input {
+  width: 240px;
+  margin-right: var(--app-space-sm);
+}
+
+/* 搜索条件行里的下拉框 */
+.app-search-select {
+  width: 200px;
+  margin-right: var(--app-space-sm);
+}
+
+/* 表格下方的分页，靠右 */
+.app-pagination {
+  margin-top: var(--app-space-sm);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 弹窗里的表单：右侧给确定按钮留出空间 */
+.app-dialog-form {
+  width: 100%;
+  padding-right: var(--app-space-lg);
+  padding-top: var(--app-space-md);
+}
+
+/* 表头统一底色。
+ * 改造前是 6 个表格各自传 :header-cell-style="{ backgroundColor: '#f5f5f5', color: '#333' }"，
+ * 现在收成一条规则。global.css 在 main.js 里于 element-plus/dist/index.css 之后引入，
+ * 同权重时后引入的生效，所以这条能盖住 Element Plus 的默认表头底色。 */
+.el-table th.el-table__cell {
+  background-color: var(--app-bg-muted);
+  color: var(--app-text-primary);
+}
+
+/* ---------------------------------------------------------------------------
+ * 上传框（头像 / 实验室封面 / 设备图片）
+ *
+ * 改造前这段在 Profile.vue、Lab.vue、Equipment.vue 里各有一份逐字相同的副本，
+ * 其中一部分还写成了非 scoped 的 <style>，重复之外又污染全局。收到这里一份。
+ * ------------------------------------------------------------------------- */
+.avatar-uploader .avatar {
+  width: 150px;
+  height: 150px;
+  display: block;
+}
+
+.avatar-uploader .el-upload {
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--app-radius-md);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: var(--el-transition-duration-fast);
+}
+
+.avatar-uploader .el-upload:hover {
+  border-color: var(--el-color-primary);
+}
+
+.el-icon.avatar-uploader-icon {
+  font-size: 28px;
+  color: var(--app-text-placeholder);
+  width: 150px;
+  height: 150px;
+  text-align: center;
 }

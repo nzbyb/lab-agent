@@ -19,7 +19,7 @@
           <el-dropdown @command="handleCommand">
             <div style="display: flex; align-items: center; cursor: pointer">
               <img :src="userInfo?.avatar" alt="" style="width: 40px; border-radius: 50%" />
-              <div style="margin-left: 3px">{{ userInfo.name }}</div>
+              <div style="margin-left: 3px">{{ userInfo?.name }}</div>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -33,12 +33,7 @@
       </el-header>
       <el-container>
         <el-aside width="220px">
-          <el-menu
-            router
-            :default-active="router.currentRoute.value.path"
-            style="height: 100%"
-            default-active="/manager/home"
-          >
+          <el-menu router :default-active="router.currentRoute.value.path" style="height: 100%">
             <el-menu-item index="/manager/home">
               <el-icon><icon-menu /></el-icon>
               <span>系统首页</span>
@@ -47,7 +42,7 @@
               <el-icon><ChatDotRound /></el-icon>
               <span>AI智能助手</span>
             </el-menu-item>
-            <el-menu-item index="/manager/lablist" v-if="userInfo?.role === 'student'">
+            <el-menu-item index="/manager/lab-list" v-if="userInfo?.role === 'student'">
               <el-icon><OfficeBuilding /></el-icon>
               <span>实验室列表</span>
             </el-menu-item>

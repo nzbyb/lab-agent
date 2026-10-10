@@ -12,7 +12,7 @@
         :rules="rules"
         :model="form"
         label-width="80px"
-        style="width: 100%; padding-right: 30px; padding-top: 16px"
+        class="app-dialog-form"
       >
         <el-form-item label="实验室">
           <el-input :model-value="labName" disabled />
@@ -50,7 +50,11 @@
             style="width: 100%"
           />
         </el-form-item>
-        <el-form-item label="备注">
+        <!-- 必须有 prop：Element Plus 的 resetFields() 只重置"注册过 prop"的
+             FormItem（源码里 `if (props.prop) formContext?.addField(...)`）。
+             少了它，上面 @open 那句 resetFields 清不掉备注，上一次填的内容会
+             留着，并被下一次预约原样提交。 -->
+        <el-form-item label="备注" prop="remark">
           <el-input type="textarea" v-model="form.remark" placeholder="请输入备注" />
         </el-form-item>
       </el-form>

@@ -2,15 +2,15 @@
   <div>
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">
+        <div class="app-card-title">
           <span>预约审核</span>
         </div>
       </template>
-      <div style="margin-bottom: 10px">
+      <div class="app-search-bar">
         <el-select
           placeholder="请选择状态"
           v-model="params.status"
-          style="width: 200px; margin-right: 10px"
+          class="app-search-select"
           clearable
           @change="handleSearch"
           @clear="handleSearch"
@@ -22,12 +22,7 @@
         </el-select>
         <el-button type="primary" @click="handleSearch">查询</el-button>
       </div>
-      <el-table
-        :header-cell-style="{ backgroundColor: '#f5f5f5', color: '#333' }"
-        :data="tableData"
-        style="width: 100%"
-        v-loading="loading"
-      >
+      <el-table :data="tableData" style="width: 100%" v-loading="loading">
         <el-table-column prop="lab_name" label="实验室" />
         <el-table-column label="预约类型">
           <template #default="{ row }">
@@ -64,7 +59,7 @@
         </el-table-column>
       </el-table>
 
-      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+      <div class="app-pagination">
         <el-pagination
           v-model:current-page="params.page"
           v-model:page-size="params.page_size"

@@ -11,7 +11,10 @@ export function chatApi(data) {
 }
 
 export async function chatStreamApi(data, onEvent) {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL
+  // 必须像 utils/request.js 那样兜底。开发时 .env.development 里有这个变量，所以看不出问题；
+  // 但生产构建**不加载** .env.development，这里会变成 undefined，拼出
+  // "undefined/api/ai/chat/stream"，整个 AI 流式对话直接失效。
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || ''
   const token = getToken()
   const res = await fetch(`${baseUrl}/api/ai/chat/stream`, {
     method: 'post',

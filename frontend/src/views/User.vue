@@ -2,15 +2,15 @@
   <div>
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">
+        <div class="app-card-title">
           <span>用户管理</span>
         </div>
       </template>
-      <div style="margin-bottom: 10px">
+      <div class="app-search-bar">
         <el-input
           placeholder="请输入账号或名称查询"
           v-model="params.keywords"
-          style="width: 240px; margin-right: 10px"
+          class="app-search-input"
           clearable
           @keyup.enter="handleSearch"
           @clear="handleSearch"
@@ -18,12 +18,7 @@
         <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
         <el-button type="success" :icon="Plus" @click="handleCreate">新增</el-button>
       </div>
-      <el-table
-        :header-cell-style="{ backgroundColor: '#f5f5f5', color: '#333' }"
-        :data="tableData"
-        style="width: 100%"
-        v-loading="loading"
-      >
+      <el-table :data="tableData" style="width: 100%" v-loading="loading">
         <el-table-column prop="username" label="账号" />
         <el-table-column prop="name" label="名称" />
         <el-table-column prop="avatar" label="头像">
@@ -59,7 +54,7 @@
           </template>
         </el-table-column>
       </el-table>
-      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+      <div class="app-pagination">
         <el-pagination
           v-model:current-page="params.page"
           v-model:page-size="params.pageSize"
@@ -76,13 +71,18 @@
         :rules="rules"
         :model="form"
         label-width="80px"
-        style="width: 100%; padding-right: 30px; padding-top: 16px"
+        class="app-dialog-form"
         v-loading="loading"
       >
         <el-form-item label="账号" prop="username">
           <el-input :disabled="!!form.id" v-model="form.username" placeholder="请输入账号" />
         </el-form-item>
-        <el-form-item label="密码" prop="password">
+        <!-- 只在新增时显示。后端 schemas/user.py 的 UserUpdateRequest **没有** password 字段，
+             编辑时填的密码会被 pydantic 静默丢掉 —— 界面上「改了密码、提示成功、其实没改」。
+             改密码统一走 /manager/password 页面。
+             这里用 v-if 而不是 disabled：FormItem 卸载时会连带把 prop 从表单注销，
+             编辑态就不会再触发下面那条 required 校验。 -->
+        <el-form-item v-if="!form.id" label="密码" prop="password">
           <el-input
             type="password"
             show-password
@@ -113,7 +113,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button>取消</el-button>
+        <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="formLoading" @click="handleSave">确定</el-button>
       </template>
     </el-dialog>
@@ -137,6 +137,9 @@ const dialogVisible = ref(false)
 const formRef = ref()
 const form = reactive({
   username: '',
+  // 必须显式声明。Vue 3 的 reactive 允许运行时新增键，所以以前 v-model 能写进去、"看起来"正常，
+  // 但 resetForm() 的 Object.assign 里没有这个键 → 清不掉，上一次输的明文密码会留在框里。
+  password: '',
   name: '',
   role: 'student',
   email: '',
@@ -161,6 +164,7 @@ const resetForm = () => {
   Object.assign(form, {
     id: null,
     username: '',
+    password: '',
     name: '',
     role: 'student',
     email: '',

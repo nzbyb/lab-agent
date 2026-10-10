@@ -2,15 +2,15 @@
   <div>
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">
+        <div class="app-card-title">
           <span>实验室设备管理</span>
         </div>
       </template>
-      <div style="margin-bottom: 10px">
+      <div class="app-search-bar">
         <el-input
           placeholder="请输入设备名称查询"
           v-model="params.keywords"
-          style="width: 240px; margin-right: 10px"
+          class="app-search-input"
           clearable
           @keyup.enter="handleSearch"
           @clear="handleSearch"
@@ -18,7 +18,7 @@
         <el-select
           placeholder="请选择实验室"
           v-model="params.lab_id"
-          style="width: 200px; margin-right: 10px"
+          class="app-search-select"
           clearable
           @change="handleSearch"
           @clear="handleSearch"
@@ -33,12 +33,7 @@
         <el-button type="primary" :icon="Search" @click="handleSearch">查询</el-button>
         <el-button type="success" :icon="Plus" @click="handleCreate">新增</el-button>
       </div>
-      <el-table
-        :header-cell-style="{ backgroundColor: '#f5f5f5', color: '#333' }"
-        :data="tableData"
-        style="width: 100%"
-        v-loading="loading"
-      >
+      <el-table :data="tableData" style="width: 100%" v-loading="loading">
         <el-table-column prop="lab_name" label="所属实验室" />
         <el-table-column prop="name" label="设备名称" />
         <el-table-column prop="img" label="图片" width="90">
@@ -69,10 +64,10 @@
           </template>
         </el-table-column>
       </el-table>
-      <div style="margin-top: 10px; display: flex; justify-content: flex-end">
+      <div class="app-pagination">
         <el-pagination
           v-model:current-page="params.page"
-          v-model:page-size="params.pageSize"
+          v-model:page-size="params.page_size"
           :total="total"
           background
           layout="prev, pager, next, total"
@@ -86,7 +81,7 @@
         :rules="rules"
         :model="form"
         label-width="100px"
-        style="width: 100%; padding-right: 30px; padding-top: 16px"
+        class="app-dialog-form"
         v-loading="loading"
       >
         <el-form-item label="所属实验室" prop="lab_id">
@@ -229,7 +224,6 @@ const handleSave = async () => {
   if (!valid) return
   formLoading.value = true
   try {
-    form
     const res = form.id ? await updateEquipmentApi(form.id, form) : await createEquipmentApi(form)
     if (res.code === 200) {
       dialogVisible.value = false
@@ -293,31 +287,3 @@ onMounted(() => {
   load()
 })
 </script>
-
-<style scoped>
-.avatar-uploader .avatar {
-  width: 150px;
-  height: 150px;
-  display: block;
-}
-</style>
-<style>
-.avatar-uploader .el-upload {
-  border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  transition: var(--el-transition-duration-fast);
-}
-.avatar-uploader .el-upload:hover {
-  border-color: var(--el-color-primary);
-}
-.el-icon.avatar-uploader-icon {
-  font-size: 28px;
-  color: #8c939d;
-  width: 150px;
-  height: 150px;
-  text-align: center;
-}
-</style>

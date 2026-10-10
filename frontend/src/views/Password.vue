@@ -2,7 +2,7 @@
   <div style="width: 50%">
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">
+        <div class="app-card-title">
           <span>修改密码</span>
         </div>
       </template>

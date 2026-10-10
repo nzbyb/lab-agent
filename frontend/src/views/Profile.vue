@@ -2,7 +2,7 @@
   <div style="width: 50%">
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">
+        <div class="app-card-title">
           <span>个人信息</span>
         </div>
       </template>
@@ -133,31 +133,3 @@ onMounted(() => {
   loadUserInfo()
 })
 </script>
-
-<style scoped>
-.avatar-uploader .avatar {
-  width: 150px;
-  height: 150px;
-  display: block;
-}
-</style>
-<style>
-.avatar-uploader .el-upload {
-  border: 1px dashed var(--el-border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-  transition: var(--el-transition-duration-fast);
-}
-.avatar-uploader .el-upload:hover {
-  border-color: var(--el-color-primary);
-}
-.el-icon.avatar-uploader-icon {
-  font-size: 28px;
-  color: #8c939d;
-  width: 150px;
-  height: 150px;
-  text-align: center;
-}
-</style>

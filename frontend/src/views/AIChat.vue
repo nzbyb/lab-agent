@@ -2,7 +2,7 @@
   <div>
     <el-card>
       <template #header>
-        <div style="font-size: 16px; font-weight: bold">
+        <div class="app-card-title">
           <span>AI智能助手</span>
         </div>
       </template>
@@ -41,14 +41,19 @@
             <!-- 当前进行中的一句话，如「正在查询开放实验室...」 -->
             <div
               v-if="item.role === 'assistant' && item.status"
-              style="margin-bottom: 6px; font-size: 12px; color: #909399"
+              style="margin-bottom: 6px; font-size: 12px; color: var(--app-text-secondary)"
             >
               {{ item.status }}
             </div>
             <!-- 本轮已发生的过程列表，只展示不回传给后端 -->
             <div
               v-if="item.role === 'assistant' && item.steps?.length"
-              style="margin-bottom: 8px; font-size: 12px; color: #909399; line-height: 1.5"
+              style="
+                margin-bottom: 8px;
+                font-size: 12px;
+                color: var(--app-text-secondary);
+                line-height: 1.5;
+              "
             >
               <div v-for="(step, i) in item.steps" :key="i">• {{ step }}</div>
             </div>
