@@ -76,6 +76,7 @@ from app.main import app  # noqa: E402
 from app.models.equipment import Equipment  # noqa: E402
 from app.models.lab import Lab  # noqa: E402
 from app.models.reservation import Reservation  # noqa: E402,F401
+from app.models.chat import ChatConversation, ChatMessage  # noqa: E402,F401
 from app.models.user import User  # noqa: E402
 from app.schemas.reservation import ReservationCreateRequest  # noqa: E402
 from app.utils.password import hash_password  # noqa: E402
