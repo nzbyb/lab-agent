@@ -33,7 +33,7 @@
       </el-col>
     </el-row>
 
-    <el-row :gutter="16">
+    <el-row :gutter="16" class="panel-row">
       <el-col :xs="24" :sm="24" :md="12">
         <el-card shadow="never" class="panel">
           <template #header>
@@ -50,7 +50,7 @@
       </el-col>
 
       <el-col :xs="24" :sm="24" :md="12">
-        <el-card shadow="never" class="panel">
+        <el-card shadow="never" class="panel panel-fill">
           <template #header>
             <div class="panel-head">
               <div class="app-card-title">实验室预约排行</div>
@@ -604,6 +604,66 @@ onMounted(async () => {
  * ------------------------------------------------------------------------- */
 .panel {
   margin-bottom: 16px;
+}
+
+/* ---------------------------------------------------------------------------
+ * 两列等高
+ *
+ * el-row 的列本来就是等高的（flex 默认 align-items: stretch），问题出在
+ * el-card 是普通块级元素，只按自己的内容高度渲染——矮的那张卡片下面就会空一段。
+ * 实测（1440×900，学生账号）：趋势卡片 360px（图表定高 260px 撑出来的），
+ * 排行卡片 255px（只有 4 行），排行卡片底到列底空了 121px。
+ *
+ * 让列变成 flex 容器，卡片作为 flex 项就会沿交叉轴被拉伸到列高。卡片自带的
+ * margin-bottom: 16px 这时算"项的外边距"，会一并计入，所以卡片最终高度
+ * = 列高 376 - 16 = 360，正好和左边那张严丝合缝。
+ *
+ * 不能直接给卡片写 height: 100%：百分比是按整个列高（376px）算的，
+ * 会把卡片撑成 376，反倒比左边高出一截。
+ * ------------------------------------------------------------------------- */
+.panel-row > .el-col {
+  display: flex;
+}
+/* 列一旦变成 flex 容器，卡片就成了 flex 项：主轴（这里是横向）上 flex-grow
+   默认是 0，卡片会缩到"内容宽度"，整张卡跟着变窄——实测卡片宽度从 575px 掉到
+   215px，图表被压扁，排行条因为没有宽度可分会整条消失（名字和数字还在，条没了）。
+   所以横向这一半也必须显式写：flex: 1 让它吃满列宽，min-width: 0 允许它收缩。 */
+.panel-row > .el-col > .panel {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 排行榜只有 4~5 行，卡片撑高之后还得把这些行铺开，
+   否则卡片是长高了，内容依旧全挤在顶部、下面白着一大块。 */
+.panel-fill {
+  display: flex;
+  flex-direction: column;
+}
+/* .el-card__body 由 el-card 内部渲染，不带本组件的 scope 属性，必须 :deep 才够得着 */
+.panel-fill :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* 没有排行数据时这里渲染的是 el-empty，它不是 flex: 1，让它居中而不是贴在卡片顶上 */
+  justify-content: center;
+}
+.panel-fill .rank {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* 行数少到被下面的 max-height 卡住、吃不满卡片时，让整份榜单在卡片里居中，
+     而不是贴着卡片顶、把空白全留在下面 */
+  justify-content: center;
+}
+/* 每行等分剩余高度，行内内容靠 .rank-item 自己的 align-items: center 垂直居中。
+   窄屏两张卡改成上下堆叠时，卡片按内容定高、没有多余空间可分，
+   行高会自己回到自然高度（flex-basis: 0 被 min-height: auto 顶回内容高度）。
+   max-height 是给"只约过 1~2 个实验室"的账号兜底：不加的话那一行会被撑成
+   整个卡片高（实测约 265px），变成一条巨大的空行。4 行时每行约 66px，够不到上限，
+   所以常见情况下这个上限不起作用。 */
+.panel-fill .rank-item {
+  flex: 1;
+  max-height: 72px;
 }
 /* 卡片头改成两端对齐：左边标题，右边补一句口径/汇总。
    baseline 对齐让 16px 的标题和 12px 的副标题坐在同一条基线上。 */
