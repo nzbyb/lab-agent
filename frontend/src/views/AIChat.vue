@@ -6,14 +6,19 @@
           <div class="app-card-title">
             <span>AI智能助手</span>
           </div>
-          <el-button
-            link
-            type="primary"
-            :icon="Delete"
-            :disabled="loading || isWelcome"
-            @click="clearChat"
-            >清空对话</el-button
-          >
+          <div class="chat-head-actions">
+            <el-button link type="primary" :icon="Clock" @click="openHistory"
+              >历史对话</el-button
+            >
+            <el-button
+              link
+              type="primary"
+              :icon="Plus"
+              :disabled="loading || isWelcome"
+              @click="newChat"
+              >新对话</el-button
+            >
+          </div>
         </div>
       </template>
 
@@ -43,8 +48,8 @@
         </div>
 
         <div
-          v-for="(item, index) in visibleMessages"
-          :key="index"
+          v-for="item in visibleMessages"
+          :key="item.id"
           class="msg-row"
           :class="item.role === 'user' ? 'is-user' : 'is-bot'"
         >
@@ -62,7 +67,7 @@
           <div class="msg-main">
             <div class="msg-meta">
               <span>{{ senderName(item) }}</span>
-              <span v-if="item.time" class="msg-time">{{ item.time }}</span>
+              <span v-if="item.time" class="msg-time">{{ formatTime(item.time) }}</span>
             </div>
 
             <div class="bubble">
@@ -152,20 +157,61 @@
       </div>
       <div class="composer-hint">Enter 发送 · Shift+Enter 换行</div>
     </el-card>
+
+    <!-- 历史对话。列表只列自己的（后端按 user_id 过滤，管理员也看不到别人的）。
+         点标题＝把那条读回来接着聊；点删除＝真删，连带消息一起。 -->
+    <el-drawer v-model="historyOpen" title="历史对话" size="360px">
+      <div v-loading="historyLoading" class="history">
+        <el-empty
+          v-if="!historyLoading && !historyList.length"
+          description="还没有历史对话"
+          :image-size="80"
+        />
+        <div
+          v-for="conv in historyList"
+          :key="conv.id"
+          class="history-item"
+          :class="{ 'is-active': conv.id === conversationId }"
+        >
+          <div class="history-main" @click="pickConversation(conv)">
+            <div class="history-title">{{ conv.title || '未命名对话' }}</div>
+            <div class="history-time">{{ formatTime(conv.update_time) }}</div>
+          </div>
+          <!-- 正在生成回答时，当前这条会话的删除按钮要禁掉：SSE 回调还在往这轮
+               对话上追加内容，删掉它这轮回复就静默丢了（见 removeConversation）。
+               别的会话不受影响，照常能删。 -->
+          <el-button
+            link
+            type="danger"
+            :icon="Delete"
+            title="删除这条对话"
+            :disabled="loading && conv.id === conversationId"
+            @click.stop="removeConversation(conv)"
+          />
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 <script setup>
-import { chatStreamApi } from '@/api/ai'
-import { computed, nextTick, reactive, ref } from 'vue'
+import {
+  chatStreamApi,
+  deleteConversationApi,
+  getConversationMessagesApi,
+  listConversationsApi
+} from '@/api/ai'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   ArrowRight,
   CircleCheckFilled,
+  Clock,
   Delete,
   Loading,
   MagicStick,
+  Plus,
   Promotion
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
@@ -179,20 +225,87 @@ const userInitial = computed(() => (userStore.userInfo?.name || '我').slice(0, 
 // 气泡上方的说话人名字。登录信息里没有名字时退成「我」，别显示成空白。
 const senderName = (item) => (item.role === 'user' ? userStore.userInfo?.name || '我' : '助手小田')
 
-// 欢迎语抽成常量：清空对话时要还原成这一条。
+// 欢迎语抽成常量：开新对话时要还原成这一条。
 // 它在空态下并不渲染（由下面的起始面板承担引导），但仍然留在 messages 里
 // 参与 history——保持改造前"模型能看到自己打过招呼"的行为不变。
 const WELCOME_MESSAGE = {
+  id: 'welcome',
   role: 'assistant',
   content:
     '您好,我是实验室助手小田。您可以向我询问怎么预约、取消实验室或者设备。也可以帮你预约实验室。'
 }
 
-const messages = ref([WELCOME_MESSAGE])
+// ---------------------------------------------------------------------------
+// 会话标识与本地记忆
+//
+// 两个标识要分清，前端两个都得留着：
+//   session_key —— 字符串，前端生成，流式接口靠它把对话挂到哪条会话上
+//   conversationId —— 整型，后端主键，历史列表和消息接口用的是它
+// 发第一条消息时后端会在 done 事件里把 id 回传，那之后两个就都有了。
+// ---------------------------------------------------------------------------
+
+// 生成会话标识。**不能直接调 crypto.randomUUID()**：它只在安全上下文
+// （https 或 localhost）下存在，用局域网 IP（http://192.168.x.x:5173）打开时
+// 它是 undefined，直接调用会抛错——投屏/演示正好是这种场景。
+const newSessionKey = () => {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID()
+  // getRandomValues 不受安全上下文限制，是可靠的降级路径。
+  // 拼出来是 32 位十六进制，形状不同于 UUID，但后端只要求 8~36 位的字母数字加 - _
+  if (window.crypto?.getRandomValues) {
+    const bytes = new Uint8Array(16)
+    window.crypto.getRandomValues(bytes)
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+  }
+  return `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`
+}
+
+// 本地只记「上次聊的是哪条会话」。**按用户 id 分开存**：不分的话换个账号
+// 登录会读到上一个人的会话，直接看到别人的聊天记录。
+const storageKey = () => `ai_last_conversation:${userStore.userInfo?.id ?? 'unknown'}`
+
+const readSaved = () => {
+  try {
+    return JSON.parse(localStorage.getItem(storageKey()) || 'null')
+  } catch {
+    // 隐私模式下 localStorage 读写都可能抛，读不到就当没有
+    return null
+  }
+}
+
+const saved = readSaved()
+
+const messages = ref([{ ...WELCOME_MESSAGE }])
 const input = ref('')
 const loading = ref(false)
 const boxRef = ref()
 const inputRef = ref()
+
+// 同步初始化，别等 onMounted：发消息时用得到，中间不能有一个「还是 null」的窗口
+const sessionKey = ref(saved?.sessionKey || newSessionKey())
+const conversationId = ref(saved?.conversationId ?? null)
+
+const historyOpen = ref(false)
+const historyLoading = ref(false)
+const historyList = ref([])
+
+const persist = () => {
+  try {
+    localStorage.setItem(
+      storageKey(),
+      JSON.stringify({
+        sessionKey: sessionKey.value,
+        conversationId: conversationId.value
+      })
+    )
+  } catch {
+    // 存不了就算了，不影响对话本身，只是下次进来恢复不了
+  }
+}
+
+// 消息在列表里的稳定 id。用序号当 key 的话，删一条或插一条会让后面所有行
+// 都换 key，Vue 会把它们全部重建，正在跑的打字机动画也会断。
+let uid = 0
+const nextId = () => `m${(uid += 1)}`
 
 // 空态：只剩那条欢迎语，说明这轮对话还没开始
 const isWelcome = computed(() => messages.value.length <= 1)
@@ -216,26 +329,182 @@ const fillInput = (text) => {
   inputRef.value?.focus()
 }
 
-const clearChat = () => {
-  // 流式生成中不允许清空：对象虽然从列表里移除了，SSE 回调还会继续往它身上
+// 开一条全新的会话。**不删旧的那条**——它还在历史里，这也是和新会话的区别所在。
+const startNewSession = () => {
+  messages.value = [{ ...WELCOME_MESSAGE }]
+  input.value = ''
+  conversationId.value = null
+  sessionKey.value = newSessionKey()
+  persist()
+}
+
+const newChat = () => {
+  // 流式生成中不允许重置：对象虽然从列表里移除了，SSE 回调还会继续往它身上
   // 追加 token——白跑一场，而且用户会看到"点了没反应"。
   // 按钮同时置了 disabled，这里再拦一道。
   if (loading.value) return
-  messages.value = [{ ...WELCOME_MESSAGE }]
-  input.value = ''
+  startNewSession()
 }
 
 // 跟后端 app/schemas/ai.py 的 _MAX_USER_CONTENT 对齐。
 // 两头都卡住，超长消息才会在输入框就被拦下来，而不是发出去吃一个 422。
 const MAX_MESSAGE_CHARS = 2000
 
+// 跟后端 app/schemas/ai.py 的 _MAX_ASSISTANT_CONTENT 对齐。
+// 回灌历史时助手回复要截到这个长度，理由见 handleSend 里那段注释。
+const MAX_HISTORY_ASSISTANT_CHARS = 4000
+
 // 消息时间戳只存在前端：下面回传 history 时只取 role/content，
 // 所以它既不会污染请求体，也不占后端上下文。
-const nowTime = () => {
+// 存**完整 ISO 时间**而不是"时:分"——恢复出来的历史可能跨天，只显示时分会分不清哪天。
+const nowStamp = () => new Date().toISOString()
+
+const pad2 = (n) => String(n).padStart(2, '0')
+
+// 今天的只显示时分，更早的补上"月-日"
+const formatTime = (value) => {
+  if (!value) return ''
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const hm = `${pad2(date.getHours())}:${pad2(date.getMinutes())}`
   const now = new Date()
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(now.getHours())}:${pad(now.getMinutes())}`
+  if (date.toDateString() === now.toDateString()) return hm
+  return `${date.getMonth() + 1}-${pad2(date.getDate())} ${hm}`
 }
+
+// ---------------------------------------------------------------------------
+// 历史对话
+// ---------------------------------------------------------------------------
+
+// 后端存的是 {id, role, content, steps, create_time}，这里翻成页面用的消息对象
+const toMessageItem = (row) => ({
+  id: `db-${row.id}`,
+  role: row.role,
+  content: row.content || '',
+  status: '',
+  // 恢复出来的步骤一律已结束、默认收起——回看时先看结论，想看过程再点开。
+  // state 必须**强制**改成 done，不能照抄库里的值：用户正好在工具执行到一半时
+  // 关掉页面的话，那一步的 state 会以 "running" 原样存进库（后端的 tool_end 没等到）。
+  // 照抄的话，回看时这个步骤会永远转圈——页面上已经没有 SSE 再来把它改成已完成了。
+  steps: (row.steps || []).map((step) => ({
+    ...step,
+    state: 'done',
+    expanded: false
+  })),
+  stepsOpen: false,
+  stepsTouched: false,
+  time: row.create_time
+})
+
+// 把一条会话读回来接着聊。conv 要同时带 id 和 session_key——
+// session_key 是继续对话时要发回后端的，只有列表接口会给。
+const loadConversation = async (conv, { silent = false } = {}) => {
+  try {
+    const res = await getConversationMessagesApi(conv.id)
+    // 后端对「查不到 / 不是自己的」给的是 200 + data:null，不是报错
+    if (res.code !== 200 || !res.data?.length) {
+      if (!silent) ElMessage.warning('这条对话已经不在了')
+      return false
+    }
+    messages.value = [{ ...WELCOME_MESSAGE }, ...res.data.map(toMessageItem)]
+    conversationId.value = conv.id
+    sessionKey.value = conv.session_key
+    persist()
+    scrollToBottom()
+    return true
+  } catch {
+    // 网络/HTTP 异常，拦截器已经弹过提示了
+    return false
+  }
+}
+
+const loadHistory = async () => {
+  historyLoading.value = true
+  try {
+    // page_size 跟后端的保留上限（chat_service._MAX_CONVERSATIONS）对齐，
+    // 一次把可能存在的都拉回来，这一页不做分页控件
+    const res = await listConversationsApi({ page: 1, page_size: 50 })
+    if (res.code === 200) historyList.value = res.data?.list || []
+  } catch {
+    // 拦截器已提示
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const openHistory = () => {
+  historyOpen.value = true
+  loadHistory()
+}
+
+const pickConversation = async (conv) => {
+  if (loading.value) {
+    ElMessage.warning('正在生成回答，请稍候')
+    return
+  }
+  if (conv.id === conversationId.value) {
+    historyOpen.value = false
+    return
+  }
+  if (await loadConversation(conv)) historyOpen.value = false
+}
+
+const removeConversation = async (conv) => {
+  // 生成中不许删**当前**这条。删了会静默丢数据：正在跑的 SSE 连接不受影响，
+  // 前端照样把这轮回复渲染出来，但后端的 record_assistant_turn 在 finally 里
+  // 查不到会话就直接 return（chat_service 里 "查不到就放弃"），这轮回复永远不落库。
+  // 用户看到的是屏幕上一段活着的问答，其实库里整条会话都没了，一刷新全消失。
+  // 别的会话没有流挂在上面，删了没事。
+  // 按钮那边也置了 disabled，这里再拦一道（和 newChat 一个写法）。
+  if (loading.value && conv.id === conversationId.value) {
+    ElMessage.warning('正在生成回答，请稍候')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${conv.title || '未命名对话'}」吗？删除后无法恢复。`,
+      '删除对话',
+      { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }
+    )
+  } catch {
+    return // 用户点了取消
+  }
+
+  try {
+    const res = await deleteConversationApi(conv.id)
+    if (res.code !== 200) return // 失败原因由拦截器提示
+    ElMessage.success('已删除')
+    historyList.value = historyList.value.filter((item) => item.id !== conv.id)
+    // 删掉的正是当前这条，就退回一条新会话，别停在一个已经不存在的会话上
+    if (conv.id === conversationId.value && !loading.value) startNewSession()
+  } catch {
+    // 拦截器已提示
+  }
+}
+
+// 进页面时恢复上次那条会话。
+// 单开在 onMounted 而不是直接写在 setup 里：得等组件挂载完，scrollToBottom
+// 才有真实的 DOM 可以滚。
+onMounted(async () => {
+  if (!conversationId.value) {
+    persist()
+    return
+  }
+  // silent：恢复失败是正常情况（会话可能已被保留上限删掉，或在别的标签页里删了），
+  // 弹提示会变成"用户什么都没干就看到报错"
+  const ok = await loadConversation(
+    { id: conversationId.value, session_key: sessionKey.value },
+    { silent: true }
+  )
+  // 但别在用户已经开始这一轮之后才重置：startNewSession 会清空消息、
+  // 换掉 session_key，把刚发出去的消息和正在跑的回复一起冲掉；等这轮结束，
+  // done 事件又会拿旧会话的 id 写回来，本地就存成「新 session_key + 旧会话 id」
+  // 这样一对配不上的记录，下次进来读的是别人的会话、发出去的却落到另一条上。
+  // 恢复请求还没回来就发送，慢网/局域网下是真会发生的。
+  // 跳过重置不会留下坏状态：这轮结束时后端会把新建会话的 id 经 done 事件送回来，
+  // conversationId 自己就修正了（session_key 一直是同一个，配得上）。
+  if (!ok && !loading.value) startNewSession()
+})
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -248,13 +517,14 @@ const handleSend = async () => {
   const text = input.value.trim()
   if (!text || loading.value) return
 
-  messages.value.push({ role: 'user', content: text, time: nowTime() })
+  messages.value.push({ id: nextId(), role: 'user', content: text, time: nowStamp() })
   input.value = ''
   loading.value = true
   scrollToBottom()
 
   // 必须用 reactive: 普通对象 push 后再改字段，视图可能不更新
   const assistant = reactive({
+    id: nextId(),
     role: 'assistant',
     content: '', // 正文：靠 token 一点点拼
     status: '正在思考...', // 当前状态文案
@@ -264,7 +534,7 @@ const handleSend = async () => {
     steps: [],
     stepsOpen: true, // 运行中默认展开，让用户当场看到 Agent 在干活
     stepsTouched: false, // 用户手动开合过，本轮结束就不再自动收起
-    time: nowTime()
+    time: nowStamp()
   })
   messages.value.push(assistant)
   const assistantIndex = messages.value.length - 1
@@ -282,11 +552,22 @@ const handleSend = async () => {
     )
     .slice(-20)
     // 只保留 role/content; status、steps、time 丢掉
-    .map(({ role, content }) => ({ role, content }))
+    .map(({ role, content }) => ({
+      role,
+      // 助手回复必须截到后端的单条上限再发回去。
+      //
+      // 后端给模型的单次回复封顶 1024 个 token，而英文和代码大约 4 个字符一个
+      // token，所以单条回复是有可能超过 4000 字的。改造前对话只活在内存里，超了
+      // 刷新一下就没了；**落库之后会变成永久故障**——这条会话从此每次请求都吃 422，
+      // 再也发不出去。在这里截断是代价最小的兜底（后端的上限不能只调大：
+      // 总量上限会跟着失效）。
+      content:
+        role === 'assistant' ? content.slice(0, MAX_HISTORY_ASSISTANT_CHARS) : content
+    }))
 
   try {
     // 第二个参数是回调：每解析出一条 SSE 事件就进一次
-    await chatStreamApi({ messages: history }, (evt) => {
+    await chatStreamApi({ messages: history, session_key: sessionKey.value }, (evt) => {
       if (evt.type === 'status') {
         assistant.status = evt.message || '正在思考...'
       } else if (evt.type === 'tool_start') {
@@ -323,6 +604,12 @@ const handleSend = async () => {
       } else if (evt.type === 'done') {
         assistant.status = ''
         // 注意: 不要在这里再 append 一整段正文，否则会双份
+        // 后端在这条事件里回传了会话的整型 id（我们发上去的是字符串的 session_key）。
+        // 拿到就记下——历史列表和消息接口认的是这个 id。
+        if (evt.conversation_id && evt.conversation_id !== conversationId.value) {
+          conversationId.value = evt.conversation_id
+          persist()
+        }
       } else if (evt.type === 'error') {
         assistant.status = ''
         if (!assistant.content) {
@@ -443,6 +730,13 @@ const parseMarkdown = (text) => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+/* 两个操作按钮之间用 Element Plus 自带的 el-button + el-button 间距，
+   这里不再加 gap，否则两处间距会叠起来 */
+.chat-head-actions {
+  display: flex;
+  align-items: center;
 }
 
 .chat-box {
@@ -905,5 +1199,62 @@ const parseMarkdown = (text) => {
   font-size: 12px;
   color: var(--app-text-secondary);
   text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+ * 历史对话抽屉
+ *
+ * 注意：el-drawer 会把内容 teleport 到 body，但**插槽内容仍然是在本组件里
+ * 编译的**，所以带着本组件的 scoped 属性，这些类名照常生效。
+ * （只有 drawer 自己渲染出来的那层外壳拿不到，要调那层才需要 :deep。）
+ * ------------------------------------------------------------------------- */
+.history {
+  min-height: 120px; /* 空态和加载遮罩都要有地方显示 */
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  transition:
+    border-color 0.2s,
+    background-color 0.2s;
+}
+
+.history-item:hover {
+  border-color: var(--el-color-primary-light-5);
+  background-color: var(--el-color-primary-light-9);
+}
+
+/* 当前正在聊的那条，给个底色，免得在列表里找不着 */
+.history-item.is-active {
+  border-color: var(--app-primary);
+  background-color: var(--el-color-primary-light-9);
+}
+
+/* 点标题这一整块才触发切换，右侧的删除按钮独立响应 */
+.history-main {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.history-title {
+  font-size: 14px;
+  color: var(--app-text-primary);
+  /* 标题是一整句话截出来的，必须单行省略，否则长标题会把每条撑成两行 */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.history-time {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
 }
 </style>

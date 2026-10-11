@@ -10,6 +10,30 @@ export function chatApi(data) {
   })
 }
 
+export function listConversationsApi(params) {
+  return request({
+    url: '/api/chat/conversations',
+    method: 'get',
+    params
+  })
+}
+
+// 会话已被保留上限删掉时，后端给的是 200 + data:null（不是报错），
+// 调用方要判空，别直接当下标用。
+export function getConversationMessagesApi(id) {
+  return request({
+    url: `/api/chat/conversations/${id}/messages`,
+    method: 'get'
+  })
+}
+
+export function deleteConversationApi(id) {
+  return request({
+    url: `/api/chat/conversations/${id}`,
+    method: 'delete'
+  })
+}
+
 export async function chatStreamApi(data, onEvent) {
   // 必须像 utils/request.js 那样兜底。开发时 .env.development 里有这个变量，所以看不出问题；
   // 但生产构建**不加载** .env.development，这里会变成 undefined，拼出
