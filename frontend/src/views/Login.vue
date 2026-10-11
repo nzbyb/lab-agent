@@ -35,6 +35,13 @@
         <h2 class="form-title">欢迎回来</h2>
         <p class="form-subtitle">请登录你的账号以继续使用</p>
 
+        <!-- name 必须显式写：el-input 声明了 name prop，但不传就是 undefined，
+             渲染出来的 <input> 上根本没有 name 属性（实测过）。autocomplete 是
+             "这个字段是什么"的语义提示，name 才是密码管理器和浏览器自动填充
+             一直在认的传统信号，两个一起给才稳。
+             另外 el-form 渲染成的是真的 <form>，但 el-button 的 native-type 默认是
+             button，所以页面里没有 submit 按钮 —— 浏览器的隐式提交不会触发，
+             按回车不会刷新页面。（提交只走下面两个 @keyup.enter。） -->
         <el-form ref="formRef" :rules="rules" :model="form" label-width="0px" class="login-form">
           <el-form-item prop="username">
             <el-input
@@ -43,6 +50,7 @@
               placeholder="请输入账号"
               :prefix-icon="User"
               autofocus
+              name="username"
               autocomplete="username"
               @keyup.enter="login"
             />
@@ -55,6 +63,7 @@
               placeholder="请输入密码"
               :prefix-icon="Lock"
               show-password
+              name="password"
               autocomplete="current-password"
               @keyup.enter="login"
             />
@@ -221,8 +230,14 @@ const login = async () => {
 /* 两级标题的字号都在这里显式写死，不靠 h1/h2 的浏览器默认值。
  * 改造前那版有一个不生效的 <h1 font-size="28px"> HTML 属性，是靠 h1 默认
  * 2em × body 14px 恰好等于 28px 才"看起来没坏"。别再依赖这种巧合。 */
+/* 字号随视口自适应，不是"为了好看"，是为了修一条断点缝：
+ * 901~955px 之间仍走左右分栏（断点在 900px），但左栏内容宽只剩 296px，
+ * 而 34px × 9 个字 ≈ 306px > 296px，标题会被硬折成两行（实测标题高 88px vs 44px），
+ * 960px 起才恢复一行。用 clamp 让它在这段里缩到 24~26px 就放得下了。
+ * 1440px 时 2.6vw = 37.4px，被上限卡回 34px，观感与改造后完全一致。
+ * 900px 以下由文件末尾的媒体查询接管（那里显式写 22px，在后、同权重，会盖过这条）。 */
 .brand-title {
-  font-size: 34px;
+  font-size: clamp(24px, 2.6vw, 34px);
   line-height: 1.3;
   letter-spacing: 1px;
 }
