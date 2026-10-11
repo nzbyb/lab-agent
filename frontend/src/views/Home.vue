@@ -24,6 +24,30 @@
       </div>
     </el-card>
 
+    <!-- 两张图同源（一次 /statistics/overview）。放在数字卡片之后、快捷入口之前。
+         md 以上并排，窄屏堆叠：并排时图会被压到很窄，趋势的 7 个刻度会挤在一起。 -->
+    <el-row :gutter="16">
+      <el-col :xs="24" :sm="24" :md="12">
+        <el-card shadow="never" style="margin-bottom: 16px">
+          <template #header>
+            <div class="app-card-title">近 7 天预约趋势</div>
+          </template>
+          <BaseChart :option="trendOption" />
+        </el-card>
+      </el-col>
+      <el-col :xs="24" :sm="24" :md="12">
+        <el-card shadow="never" style="margin-bottom: 16px">
+          <template #header>
+            <div class="app-card-title">实验室预约排行</div>
+          </template>
+          <!-- 一个实验室都没排上时，柱状图会是一张彻底空白的图，看着像坏了。
+               换成明确的文案。（趋势图不用这样：空库时它是 7 个 0 的平线，本身就有信息量。） -->
+          <BaseChart v-if="hasRanking" :option="rankingOption" />
+          <el-empty v-else description="暂无预约数据" :image-size="80" />
+        </el-card>
+      </el-col>
+    </el-row>
+
     <el-card shadow="never" style="margin-bottom: 16px">
       <template #header>
         <div style="font-size: 16px">
@@ -67,19 +91,66 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { getLabPageListApi } from '@/api/lab'
-import { getReservationPageListApi } from '@/api/reservation'
+import { computed, onMounted, ref } from 'vue'
+import { getStatisticsOverviewApi } from '@/api/statistics'
+import BaseChart from '@/components/BaseChart.vue'
 import router from '@/router'
 import { useUserStore } from '@/stores/user'
-import { onMounted } from 'vue'
 
 // 角色判据（isAdmin / isStudent）、角色中文名、以及那个随角色变含义的预约数文案，
 // 都搬进了 stores/user.js——连同原来的注释一起，因为 Layout.vue 也要用同一套判据。
 // 不要解构：const { userInfo } = useUserStore() 会丢掉响应性。
 const userStore = useUserStore()
-const openLabCount = ref(0)
-const reservationCount = ref(0)
+
+// 统计接口的原始返回。整页只发这一个请求。
+const overview = ref(null)
+
+// 这两个数字以前是假的：拉两次分页接口（page_size: 1）只为了读 res.data.total，
+// 后端根本没有统计能力。现在由 /api/statistics/overview 一次算好。
+// 拿不到数据时兜底 0，而不是让 undefined 显示到页面上。
+const openLabCount = computed(() => overview.value?.lab_open_total ?? 0)
+const reservationCount = computed(() => overview.value?.reservation_total ?? 0)
+const hasRanking = computed(() => (overview.value?.lab_ranking?.length || 0) > 0)
+
+// option 用 computed 从 overview 派生：接口回来时自动重算，BaseChart 的 watch 收到新对象就重画。
+const trendOption = computed(() => {
+  const points = overview.value?.reservation_trend || []
+  return {
+    tooltip: { trigger: 'axis' },
+    // containLabel 让坐标轴文字算进边距里，不然窄卡片上刻度会被裁掉
+    grid: { left: 12, right: 20, top: 24, bottom: 8, containLabel: true },
+    xAxis: {
+      type: 'category',
+      boundaryGap: false,
+      // 只留 MM-DD：7 个刻度下完整的 YYYY-MM-DD 会挤成一团
+      data: points.map((point) => point.date.slice(5))
+    },
+    // 预约数是整数，minInterval: 1 免得出现 0.5 这种没有意义的刻度
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      {
+        name: '新增预约',
+        type: 'line',
+        smooth: true,
+        areaStyle: {},
+        data: points.map((point) => point.count)
+      }
+    ]
+  }
+})
+
+const rankingOption = computed(() => {
+  const items = overview.value?.lab_ranking || []
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: 12, right: 20, top: 24, bottom: 8, containLabel: true },
+    xAxis: { type: 'category', data: items.map((item) => item.lab_name) },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [
+      { name: '预约数', type: 'bar', barMaxWidth: 48, data: items.map((item) => item.count) }
+    ]
+  }
+})
 
 const features = [
   {
@@ -117,16 +188,12 @@ const shortcuts = computed(() => {
 })
 onMounted(async () => {
   try {
-    const res = await getLabPageListApi({ page: 1, page_size: 1, status: 1 })
-    if (res.code === 200) openLabCount.value = res.data?.total || 0
+    const res = await getStatisticsOverviewApi()
+    if (res.code === 200) overview.value = res.data
   } catch {
-    openLabCount.value = 0
-  }
-  try {
-    const res = await getReservationPageListApi({ page: 1, page_size: 1 })
-    if (res.code === 200) reservationCount.value = res.data?.total || 0
-  } catch {
-    reservationCount.value = 0
+    // 保持 null：模板里的 ?? 0 会把数字显示成 0，排行显示"暂无数据"。
+    // 统计只是首页的锦上添花，不该因为它失败就弹错、或者让整页挂掉。
+    overview.value = null
   }
 })
 </script>
