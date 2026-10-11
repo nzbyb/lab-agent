@@ -27,6 +27,7 @@ from app.models.equipment import Equipment
 from app.models.reservation import (
     Reservation,
 )
+from app.models.chat import ChatConversation, ChatMessage  # noqa: F401  必须导入，否则建表时发现不了模型
 from app.services import (
     kb_service,
     reservation_service,
