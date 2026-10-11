@@ -1,18 +1,20 @@
 <template>
   <div>
-    <el-card shadow="never" style="margin-bottom: 16px">
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px">
-        <div>
-          <div style="font-size: 18px; color: #333">
-            欢迎您: {{ userStore.userInfo?.name || '同学' }}
-          </div>
-          <div style="font-size: 14px; color: #999; margin-top: 8px">
-            欢迎使用实验室预约系统，当前身份: {{ userStore.roleLabel }}
-          </div>
+    <!-- 欢迎条。刻意不用渐变背景：渐变块占地很大却只承载"欢迎"这一件事，
+         是典型的装饰性开销。改成白底 + 左侧一条主色竖条——同样的极简成本，
+         但竖条是在表达"这里是页面起点"，有分区含义，不是纯装饰。 -->
+    <div class="hero">
+      <div class="hero-main">
+        <div class="hero-title">{{ greeting }}，{{ userStore.userInfo?.name || '同学' }}</div>
+        <div class="hero-sub">
+          <span class="hero-tag">{{ userStore.roleLabel }}</span>
+          <span>{{ todayText }}</span>
         </div>
-        <el-button type="primary" @click="router.push('/manager/ai-chat')">打开AI助手</el-button>
       </div>
-    </el-card>
+      <el-button type="primary" :icon="MagicStick" @click="router.push('/manager/ai-chat')">
+        打开 AI 助手
+      </el-button>
+    </div>
 
     <!-- 四个指标磁贴。原来是"开放的实验室 10"和"预约数 16"两个裸数字并排一行，
          没有单位、没有口径、没有分母，看不出 10 是好还是不好。 -->
@@ -105,44 +107,35 @@
       <el-empty v-else description="暂无预约记录" :image-size="72" />
     </el-card>
 
-    <el-card shadow="never" style="margin-bottom: 16px">
+    <el-card shadow="never" class="panel">
       <template #header>
-        <div style="font-size: 16px">
-          <span>快捷入口</span>
+        <div class="panel-head">
+          <div class="app-card-title">快捷入口</div>
         </div>
       </template>
-      <div style="display: flex; flex-wrap: wrap; gap: 32px">
-        <router-link
-          v-for="(item, index) in shortcuts"
-          :key="index"
-          style="color: #409eff"
-          :to="item.path"
-          >{{ item.label }}</router-link
-        >
+      <!-- 原来是几个蓝色纯文字链接，32px 间距摊在一整张卡片的宽度上。
+           文字链接的问题不是不好看，是"没有点击面积"——鼠标要从文字上精确划过
+           才是手型光标。换成磁贴，整块都是热区。 -->
+      <div class="shortcuts">
+        <router-link v-for="item in shortcuts" :key="item.path" class="shortcut" :to="item.path">
+          <el-icon class="shortcut-icon"><component :is="item.icon" /></el-icon>
+          <span class="shortcut-label">{{ item.label }}</span>
+          <el-icon class="shortcut-arrow"><ArrowRight /></el-icon>
+        </router-link>
       </div>
     </el-card>
 
-    <div style="margin-bottom: 16px">
-      <el-row :gutter="16">
-        <el-col :span="8" v-for="(item, index) in features" :key="index">
-          <el-card shadow="never">
-            <div style="padding: 10px">
-              <div style="font-size: 16px; font-weight: 600; color: #333">{{ item.title }}</div>
-              <div
-                style="
-                  margin-top: 8px;
-                  color: #666;
-                  font-size: 13px;
-                  line-height: 1.6;
-                  min-height: 40px;
-                "
-              >
-                {{ item.desc }}
-              </div>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
+    <!-- 三张能力卡片。原来用 el-row/el-col :span="8" 写死三列，
+         窄屏下三列会一起被压扁而不是换行；换成 CSS grid 的 auto-fit 自适应。 -->
+    <div class="features">
+      <div v-for="item in features" :key="item.title" class="feature">
+        <div class="feature-head">
+          <el-icon class="feature-icon"><component :is="item.icon" /></el-icon>
+          <span class="feature-title">{{ item.title }}</span>
+        </div>
+        <div v-if="item.tag" class="feature-tag">{{ item.tag }}</div>
+        <div class="feature-desc">{{ item.desc }}</div>
+      </div>
     </div>
   </div>
 </template>
@@ -151,7 +144,19 @@
 import { computed, onMounted, ref } from 'vue'
 import { getStatisticsOverviewApi } from '@/api/statistics'
 import BaseChart from '@/components/BaseChart.vue'
-import { Calendar, Clock, Cpu, OfficeBuilding } from '@element-plus/icons-vue'
+import {
+  ArrowRight,
+  Calendar,
+  Clock,
+  Connection,
+  Cpu,
+  MagicStick,
+  OfficeBuilding,
+  Reading,
+  Stamp,
+  Tickets,
+  User
+} from '@element-plus/icons-vue'
 import router from '@/router'
 import { useUserStore } from '@/stores/user'
 
@@ -168,6 +173,30 @@ const hasRanking = computed(() => rankingList.value.length > 0)
 const rankingList = computed(() => overview.value?.lab_ranking || [])
 const trendPoints = computed(() => overview.value?.reservation_trend || [])
 const trendTotal = computed(() => trendPoints.value.reduce((sum, point) => sum + point.count, 0))
+
+// ---------------------------------------------------------------------------
+// 欢迎条上的问候语与日期
+//
+// 这两个 computed 没有任何响应式依赖，所以只会算一次、之后一直用缓存值。
+// 也就是说它们是"页面打开那一刻"的快照：把页面挂着跨过 12 点，问候语不会自己变。
+// 这是刻意的——为了一句问候语挂一个定时器，代价和收益不成比例。
+// ---------------------------------------------------------------------------
+const greeting = computed(() => {
+  const hour = new Date().getHours()
+  if (hour < 6) return '夜深了'
+  if (hour < 11) return '早上好'
+  if (hour < 14) return '中午好'
+  if (hour < 18) return '下午好'
+  return '晚上好'
+})
+
+const todayText = computed(() => {
+  const now = new Date()
+  // 不用 toLocaleDateString：它的输出随浏览器语言环境变，同一份代码在不同机器上
+  // 会给出 "2026/10/11" 或 "10/11/2026"，排版会跟着跳。手拼格式才是稳定的。
+  const week = ['日', '一', '二', '三', '四', '五', '六'][now.getDay()]
+  return `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${week}`
+})
 
 // ---------------------------------------------------------------------------
 // 四个指标磁贴
@@ -326,14 +355,20 @@ const rankPercent = (count) => `${Math.round((count / rankMax.value) * 100)}%`
 const features = [
   {
     title: '业务预约',
+    icon: Tickets,
     desc: '实验室 / 设备浏览、提交预约、我的预约和管理员审核'
   },
   {
     title: '知识库的问答',
+    icon: Reading,
     desc: 'RAG 检索规则和开放时间等文档，回答有依据'
   },
   {
     title: '智能Agent',
+    icon: Connection,
+    // 这条标签是给"扫一眼"的人看的：这张卡片讲的是 Agent，
+    // 具体用了什么技术写在正文里太长，抽成标签才可能被读到。
+    tag: 'LangGraph · ReAct · Tool Calling',
     desc: '根据用户输入的自然语言主动进行 Tool Call 和 节点的编排循环调用， 可以查库、查空闲时段，流式对话， 确认表单提交'
   }
 ]
@@ -345,16 +380,16 @@ const shortcuts = computed(() => {
   // 点进去被守卫拦到 403，403 的「返回首页」又回到这张首页，来回往复。
   if (userStore.isAdmin) {
     return [
-      { label: '预约审核', path: '/manager/audit-reservation' },
-      { label: '实验室管理', path: '/manager/lab' },
-      { label: '设备列表管理', path: '/manager/equipment' },
-      { label: '用户管理', path: '/manager/user' }
+      { label: '预约审核', path: '/manager/audit-reservation', icon: Stamp },
+      { label: '实验室管理', path: '/manager/lab', icon: OfficeBuilding },
+      { label: '设备列表管理', path: '/manager/equipment', icon: Cpu },
+      { label: '用户管理', path: '/manager/user', icon: User }
     ]
   }
   return [
-    { label: 'AI 智能助手', path: '/manager/ai-chat' },
-    { label: '实验室列表', path: '/manager/lab-list' },
-    { label: '我的预约', path: '/manager/my-reservation' }
+    { label: 'AI 智能助手', path: '/manager/ai-chat', icon: MagicStick },
+    { label: '实验室列表', path: '/manager/lab-list', icon: OfficeBuilding },
+    { label: '我的预约', path: '/manager/my-reservation', icon: Calendar }
   ]
 })
 onMounted(async () => {
@@ -580,6 +615,139 @@ onMounted(async () => {
 }
 .panel-sub {
   font-size: 12px;
+  color: var(--app-text-secondary);
+}
+/* el-card 的默认圆角是 4px（--el-card-border-radius），跟上面那些 10px 的磁贴
+   摆在同一屏里会明显不是一个体系。描边颜色不用动：--el-card-border-color 的默认值
+   就是 --el-border-color-light，也就是 --app-border，本来就一致。
+   作用域只在本页，其余 13 个页面维持原样。 */
+.el-card {
+  border-radius: var(--app-radius-lg);
+}
+
+/* ---------------------------------------------------------------------------
+ * 欢迎条
+ * ------------------------------------------------------------------------- */
+.hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  /* 这条主色竖条代替渐变背景：同样的极简成本，但它在表达"页面起点"，
+     是有含义的分区标记，而不是纯粹的装饰。 */
+  border-left: 4px solid var(--app-primary);
+  border-radius: var(--app-radius-lg);
+}
+.hero-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+}
+.hero-sub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+.hero-tag {
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: var(--el-color-primary-light-9);
+  color: var(--app-primary);
+}
+
+/* ---------------------------------------------------------------------------
+ * 快捷入口磁贴
+ * ------------------------------------------------------------------------- */
+/* auto-fit 让磁贴在宽屏摊开、窄屏自动换行，不必写媒体查询。
+   原来这里是几个纯文字链接，问题不在好不好看，而在热区只有文字那么大。 */
+.shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.shortcut {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-md);
+  color: var(--app-text-primary);
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.shortcut:hover {
+  border-color: var(--app-primary);
+  box-shadow: var(--app-shadow-card);
+}
+.shortcut-icon {
+  flex: none;
+  font-size: 18px;
+  color: var(--app-primary);
+}
+.shortcut-label {
+  flex: 1;
+  font-size: 14px;
+}
+.shortcut-arrow {
+  flex: none;
+  font-size: 12px;
+  color: var(--app-text-placeholder);
+}
+
+/* ---------------------------------------------------------------------------
+ * 能力卡片
+ * ------------------------------------------------------------------------- */
+/* 原来是 el-row + el-col :span="8" 写死三列，窄屏下三列会一起被压扁而不是换行 */
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.feature {
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+}
+.feature-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.feature-icon {
+  font-size: 18px;
+  color: var(--app-primary);
+}
+.feature-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+}
+.feature-tag {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 1px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  /* 技术标签用中性灰底而不是主色：它是注解，不该跟"可点击"的主色抢注意力 */
+  background: var(--app-bg-muted);
+  color: var(--app-text-secondary);
+}
+.feature-desc {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.7;
   color: var(--app-text-secondary);
 }
 </style>
