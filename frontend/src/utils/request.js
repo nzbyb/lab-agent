@@ -1,5 +1,7 @@
 import axios from 'axios'
-import { getToken, logout } from './auth'
+import { getToken } from './auth'
+import { useUserStore } from '@/stores/user'
+import { pinia } from '@/stores'
 import router from '@/router'
 import { ElMessage } from 'element-plus'
 
@@ -23,13 +25,21 @@ service.interceptors.response.use(
   (res) => {
     const data = res.data
     if (data.code !== 200) {
-      ElMessage.error(data.message || '请求失败')
+      // 401 单独处理，顺便修掉一个既有小 bug：改造前这里先弹 data.message、紧接着又弹
+      // 一条「登录状态已失效」，同一个失败弹两条 toast。现在合并成一条更具体的提示。
+      //
+      // useUserStore(pinia) 显式传实例，不依赖 active pinia：这个文件在模块顶层只会
+      // import 工厂函数（那时 app.use(pinia) 还没跑，顶层调用会抛 no active Pinia），
+      // 真正的调用发生在拦截器函数体里，也就是请求发生时才执行，必然晚于 install。
+      // 显式传实例让「active pinia 设过没有」这件事变得无关紧要。
+      // 走 store 的 logout 而不是 utils/auth 的 logout：前者会把内存里的 userInfo 一起清掉。
       if (data.code === 401) {
         ElMessage.error('登录状态已失效，请重新登录')
-        logout()
+        useUserStore(pinia).logout()
         router.push('/login')
         return Promise.reject(data)
       }
+      ElMessage.error(data.message || '请求失败')
     }
     return data
   },
@@ -37,7 +47,8 @@ service.interceptors.response.use(
     if (err.response) {
       const httpStatusCode = err.response.status
       if (httpStatusCode === 401) {
-        logout()
+        // 这条不发 toast（现状如此，本次不扩范围），只登出并跳登录页
+        useUserStore(pinia).logout()
         router.push('/login')
       } else {
         ElMessage.error(err.response.data?.message || '请求失败')

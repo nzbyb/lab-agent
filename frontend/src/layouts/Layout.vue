@@ -18,8 +18,8 @@
         <div>
           <el-dropdown @command="handleCommand">
             <div style="display: flex; align-items: center; cursor: pointer">
-              <img :src="userInfo?.avatar" alt="" style="width: 40px; border-radius: 50%" />
-              <div style="margin-left: 3px">{{ userInfo?.name }}</div>
+              <img :src="userStore.userInfo?.avatar" alt="" style="width: 40px; border-radius: 50%" />
+              <div style="margin-left: 3px">{{ userStore.userInfo?.name }}</div>
             </div>
             <template #dropdown>
               <el-dropdown-menu>
@@ -42,27 +42,27 @@
               <el-icon><ChatDotRound /></el-icon>
               <span>AI智能助手</span>
             </el-menu-item>
-            <el-menu-item index="/manager/lab-list" v-if="userInfo?.role === 'student'">
+            <el-menu-item index="/manager/lab-list" v-if="userStore.isStudent">
               <el-icon><OfficeBuilding /></el-icon>
               <span>实验室列表</span>
             </el-menu-item>
-            <el-menu-item index="/manager/my-reservation" v-if="userInfo?.role === 'student'">
+            <el-menu-item index="/manager/my-reservation" v-if="userStore.isStudent">
               <el-icon><Tickets /></el-icon>
               <span>我的预约</span>
             </el-menu-item>
-            <el-menu-item index="/manager/lab" v-if="userInfo?.role === 'admin'">
+            <el-menu-item index="/manager/lab" v-if="userStore.isAdmin">
               <el-icon><house /></el-icon>
               <span>实验室管理</span>
             </el-menu-item>
-            <el-menu-item index="/manager/equipment" v-if="userInfo?.role === 'admin'">
+            <el-menu-item index="/manager/equipment" v-if="userStore.isAdmin">
               <el-icon><setting /></el-icon>
               <span>设备列表管理</span>
             </el-menu-item>
-            <el-menu-item index="/manager/audit-reservation" v-if="userInfo?.role === 'admin'">
+            <el-menu-item index="/manager/audit-reservation" v-if="userStore.isAdmin">
               <el-icon><Checked /></el-icon>
               <span>预约审核</span>
             </el-menu-item>
-            <el-menu-item index="/manager/user" v-if="userInfo?.role === 'admin'">
+            <el-menu-item index="/manager/user" v-if="userStore.isAdmin">
               <el-icon><user /></el-icon>
               <span>用户管理</span>
             </el-menu-item>
@@ -78,7 +78,7 @@
 
 <script setup>
 import router from '@/router'
-import { useUser } from '@/utils/user'
+import { useUserStore } from '@/stores/user'
 import {
   Document,
   Menu as IconMenu,
@@ -91,9 +91,10 @@ import {
   Checked,
   ChatDotRound
 } from '@element-plus/icons-vue'
-import { logout } from '@/utils/auth'
 
-const { userInfo } = useUser()
+// 不要解构：const { userInfo } = useUserStore() 会丢掉响应性，
+// 退出登录后页头头像和菜单就不会跟着更新了。统一走 userStore.xxx。
+const userStore = useUserStore()
 
 const handleCommand = (command) => {
   if (command === 'profile') {
@@ -101,7 +102,10 @@ const handleCommand = (command) => {
   } else if (command === 'password') {
     router.push('/manager/password')
   } else if (command === 'logout') {
-    logout()
+    // 走 store 的 logout：它除了清 localStorage，还会把内存里的 userInfo 一起清掉。
+    // 改造前这里调的是 utils/auth 的 logout，只清 localStorage，
+    // 于是退出后要整页刷新菜单和头像才会消失。
+    userStore.logout()
     router.push('/login')
   }
 }

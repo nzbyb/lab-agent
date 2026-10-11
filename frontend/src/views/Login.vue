@@ -83,9 +83,9 @@ import { User, Lock, Calendar, MagicStick, Reading, DocumentChecked } from '@ele
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import { loginApi } from '@/api/auth'
-import { useUser } from '@/utils/user'
+import { useUserStore } from '@/stores/user'
 
-const { saveLoginData } = useUser()
+const userStore = useUserStore()
 
 const formRef = ref()
 
@@ -111,7 +111,7 @@ const login = async () => {
     const res = await loginApi(form)
 
     if (res.code === 200) {
-      saveLoginData(res.data)
+      userStore.saveLoginData(res.data)
       ElMessage.success('登录成功')
       await router.push('/manager/home')
     }

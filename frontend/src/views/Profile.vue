@@ -54,9 +54,9 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { uploadFileApi } from '@/api/file'
 import { ElMessage } from 'element-plus'
 import { getUserInfoApi, updateUserInfoApi } from '@/api/user'
-import { useUser } from '@/utils/user'
+import { useUserStore } from '@/stores/user'
 
-const { updateUser } = useUser()
+const userStore = useUserStore()
 
 const loading = ref(false)
 const submitting = ref(false)
@@ -121,7 +121,7 @@ const handleSubmit = async () => {
   try {
     const res = await updateUserInfoApi(form)
     if (res.code === 200) {
-      updateUser(res.data)
+      userStore.updateUser(res.data)
       ElMessage.success('更新成功')
     }
   } finally {

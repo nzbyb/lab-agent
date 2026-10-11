@@ -1,6 +1,7 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
+import { pinia } from '@/stores'
 import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
@@ -10,6 +11,9 @@ import '@/assets/css/global.css'
 
 const app = createApp(App)
 
+// pinia 必须在 router 之前：路由守卫虽然只读 localStorage，但页面组件一挂载就会用到
+// store，早装一步省得依赖执行顺序的巧合。
+app.use(pinia)
 app.use(router)
 app.use(ElementPlus, {
   locale: zhCn
