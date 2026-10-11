@@ -34,14 +34,62 @@
             </div>
 
             <div class="bubble">
-              <!-- 当前进行中的一句话，如「正在查询开放实验室...」 -->
-              <div v-if="item.role === 'assistant' && item.status" class="bubble-status">
+              <!-- 当前进行中的一句话，如「正在思考...」。一旦有工具调用，
+                   这个位置就交给下面的执行时间线，避免和步骤里的「进行中」重复。 -->
+              <div
+                v-if="item.role === 'assistant' && item.status && !item.steps?.length"
+                class="bubble-status"
+              >
                 {{ item.status }}
               </div>
-              <!-- 本轮已发生的过程列表，只展示不回传给后端 -->
-              <div v-if="item.role === 'assistant' && item.steps?.length" class="bubble-steps">
-                <div v-for="(step, i) in item.steps" :key="i">• {{ step }}</div>
+
+              <!-- 本轮的工具调用过程。运行中默认展开——要能当场看到 Agent 在查什么；
+                   本轮结束自动收起成一行摘要。 -->
+              <div v-if="item.role === 'assistant' && item.steps?.length" class="trace">
+                <div class="trace-head" @click="toggleTrace(item)">
+                  <el-icon class="trace-head-icon"><MagicStick /></el-icon>
+                  <span class="trace-title">执行过程</span>
+                  <span class="trace-count">{{ item.steps.length }} 步</span>
+                  <el-icon v-if="isRunning(item)" class="is-loading trace-spin">
+                    <Loading />
+                  </el-icon>
+                  <span class="trace-summary">{{ stepSummary(item) }}</span>
+                  <el-icon class="trace-chevron" :class="{ 'is-open': item.stepsOpen }">
+                    <ArrowRight />
+                  </el-icon>
+                </div>
+
+                <div v-show="item.stepsOpen" class="trace-body">
+                  <div v-for="(step, i) in item.steps" :key="i" class="trace-step">
+                    <div class="trace-icon">
+                      <el-icon v-if="step.state === 'running'" class="is-loading trace-spin">
+                        <Loading />
+                      </el-icon>
+                      <el-icon v-else class="trace-ok"><CircleCheckFilled /></el-icon>
+                    </div>
+                    <div class="trace-content">
+                      <div class="trace-label">
+                        <span>{{ step.label }}</span>
+                        <span v-if="previewSummary(step.preview)" class="trace-tag">
+                          {{ previewSummary(step.preview) }}
+                        </span>
+                      </div>
+                      <!-- preview 是工具的返回值，一律走文本插值，绝不 v-html：
+                           它来自数据库内容，渲染成 HTML 就等于开了个注入口子。 -->
+                      <div
+                        v-if="step.preview"
+                        class="trace-preview"
+                        :class="{ 'is-expanded': step.expanded }"
+                        :title="step.expanded ? '点击收起' : '点击展开'"
+                        @click="step.expanded = !step.expanded"
+                      >
+                        {{ previewText(step.preview) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
+
               <!-- 已过 DOMPurify 消毒，见 parseMarkdown -->
               <div class="md" v-html="parseMarkdown(item.content)"></div>
             </div>
@@ -79,7 +127,13 @@ import { computed, nextTick, reactive, ref } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElMessage } from 'element-plus'
-import { MagicStick, Promotion } from '@element-plus/icons-vue'
+import {
+  ArrowRight,
+  CircleCheckFilled,
+  Loading,
+  MagicStick,
+  Promotion
+} from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 
 // 不要解构：const { userInfo } = useUserStore() 会丢掉响应性
@@ -135,7 +189,12 @@ const handleSend = async () => {
     role: 'assistant',
     content: '', // 正文：靠 token 一点点拼
     status: '正在思考...', // 当前状态文案
-    steps: [], // 过程流水，不进下次 history
+    // 工具调用过程。刻意不是字符串数组，而是结构化的对象数组：
+    // 每一步要能分别渲染「进行中 / 已完成」两种状态，还要把返回值挂到
+    // 对应的那一步上——拼成 "开始: X" / "完成: X" 两行就做不到这些。
+    steps: [],
+    stepsOpen: true, // 运行中默认展开，让用户当场看到 Agent 在干活
+    stepsTouched: false, // 用户手动开合过，本轮结束就不再自动收起
     time: nowTime()
   })
   messages.value.push(assistant)
@@ -164,13 +223,30 @@ const handleSend = async () => {
       } else if (evt.type === 'tool_start') {
         const label = evt.label || evt.name || '工具'
         assistant.status = `正在${label}...`
-        assistant.steps.push(`开始: ${label}`)
+        assistant.steps.push({
+          name: evt.name || '',
+          label,
+          state: 'running',
+          preview: '',
+          expanded: false
+        })
       } else if (evt.type === 'tool_end') {
         const label = evt.label || evt.name || '工具'
         assistant.status = `${label}完成`
-        assistant.steps.push(`完成: ${label}`)
-        if (evt.preview) {
-          assistant.steps.push(`输出结果: ${evt.preview}`)
+        const step = findRunningStep(assistant.steps, evt.name)
+        if (step) {
+          step.state = 'done'
+          step.preview = evt.preview || ''
+        } else {
+          // 没配上（正常不该发生）也要把这一步记下来：
+          // 宁可多显示一步，也不要让过程凭空少一段。
+          assistant.steps.push({
+            name: evt.name || '',
+            label,
+            state: 'done',
+            preview: evt.preview || '',
+            expanded: false
+          })
         }
       } else if (evt.type === 'token') {
         assistant.content += evt.content || '' // 打字机：追加，不是覆盖
@@ -196,6 +272,9 @@ const handleSend = async () => {
   } finally {
     loading.value = false
     assistant.status = ''
+    // 本轮结束把过程收起成一行摘要。用户手动点开过就不动它——刚点开就被
+    // 合上是比"没收起"更烦人的体验。
+    if (!assistant.stepsTouched) assistant.stepsOpen = false
     // 这一轮什么都没产出（网络断了，或后端第一条就是 error）就把空气泡收掉，
     // 免得对话里留一个空白框。有 steps 的留着——那是这轮真实发生过的过程。
     if (!assistant.content && !assistant.steps?.length) {
@@ -203,6 +282,60 @@ const handleSend = async () => {
     }
     scrollToBottom()
   }
+}
+
+// ---------------------------------------------------------------------------
+// 工具调用过程的展示辅助
+// ---------------------------------------------------------------------------
+
+// 把 tool_end 配到它对应的那条 tool_start 上。
+// 从后往前找「还在跑、且工具名相同」的那条：同一轮里同一个工具可能被调用多次
+// （比如反复查不同日期的空闲时段），只按名字找会配错；工具是串行执行的，
+// 所以「最后一个还在跑的」就是它。
+const findRunningStep = (steps, name) => {
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    if (steps[i].state === 'running' && (!name || steps[i].name === name)) return steps[i]
+  }
+  // 名字对不上时（比如后端改了工具名）退一步，认最后一个还在跑的
+  for (let i = steps.length - 1; i >= 0; i -= 1) {
+    if (steps[i].state === 'running') return steps[i]
+  }
+  return null
+}
+
+const toggleTrace = (item) => {
+  item.stepsOpen = !item.stepsOpen
+  // 记下用户手动开合过，本轮结束时就不再自动收起
+  item.stepsTouched = true
+}
+
+const isRunning = (item) => item.steps.some((step) => step.state === 'running')
+
+// 收起时那一行摘要：去重后的工具名，如「检索实验室知识库 · 查询空闲时段」
+const stepSummary = (item) => [...new Set(item.steps.map((step) => step.label))].join(' · ')
+
+// preview 是工具返回值，多半是后端 json.dumps 出来的紧凑 JSON（工具都这么返回）。
+// 能解析就缩进后展示——读起来像一张表，而不是一长串挤在一起的字符。
+// 注意后端只截前 200 字符，超长的 JSON 必然解析失败，那就原样显示，不报错。
+const previewParsed = (preview) => {
+  if (!preview) return undefined
+  try {
+    return JSON.parse(preview)
+  } catch {
+    return undefined
+  }
+}
+
+const previewSummary = (preview) => {
+  const parsed = previewParsed(preview)
+  if (Array.isArray(parsed)) return `返回 ${parsed.length} 条`
+  if (parsed && typeof parsed === 'object') return `返回 ${Object.keys(parsed).length} 个字段`
+  return ''
+}
+
+const previewText = (preview) => {
+  const parsed = previewParsed(preview)
+  return parsed === undefined ? preview : JSON.stringify(parsed, null, 2)
 }
 
 const parseMarkdown = (text) => {
@@ -334,11 +467,153 @@ const parseMarkdown = (text) => {
 .is-user .bubble-status {
   color: rgba(255, 255, 255, 0.8);
 }
-.bubble-steps {
+
+/* ---------------------------------------------------------------------------
+ * 工具调用执行时间线
+ *
+ * 这一页真正想让人看见的就是这块：LangGraph 的 ReAct 过程——调了哪些工具、
+ * 按什么顺序、每个工具返回了什么。改造前它是一行 12px 的灰字流水
+ * （"开始: X" / "完成: X" / "输出结果: ..."），等于把唯一的技术展示点藏了。
+ * ------------------------------------------------------------------------- */
+.trace {
   margin-bottom: 8px;
+  padding: 6px 10px;
+  background-color: var(--el-color-primary-light-9);
+  border: 1px solid var(--el-color-primary-light-8);
+  border-left: 2px solid var(--app-primary);
+  border-radius: 8px;
+  /* 气泡上带 pre-wrap（为了普通文本消息的换行），这里必须复位，
+     否则面板里每个元素的模板空白都会被渲染成真实换行 */
+  white-space: normal;
+}
+
+.trace-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--app-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.trace-head-icon {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--app-primary);
+}
+.trace-title {
+  flex: 0 0 auto;
+  font-weight: 600;
+  color: var(--app-text-primary);
+}
+.trace-count {
+  flex: 0 0 auto;
+}
+/* 收起后的那一行摘要，长了自己省略，不换行把面板顶高 */
+.trace-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.trace-chevron {
+  flex: 0 0 auto;
+  font-size: 12px;
+  transition: transform 0.2s;
+}
+.trace-chevron.is-open {
+  transform: rotate(90deg);
+}
+.trace-spin {
+  color: var(--app-primary);
+}
+
+.trace-body {
+  margin-top: 8px;
+}
+
+.trace-step {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+.trace-step:last-child {
+  padding-bottom: 0;
+}
+/* 竖向导轨：从当前图标下沿连到下一步，最后一步不画 */
+.trace-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 20px;
+  bottom: 0;
+  width: 1px;
+  background-color: var(--el-color-primary-light-7);
+}
+
+.trace-icon {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.trace-ok {
+  color: var(--app-status-approved);
+}
+
+.trace-content {
+  flex: 1;
+  min-width: 0;
+}
+.trace-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--app-text-primary);
+}
+/* 「返回 N 条」这种一行摘要 */
+.trace-tag {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--app-text-secondary);
+  background-color: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+}
+
+/* 工具返回值：默认一行截断，点一下展开全文 */
+.trace-preview {
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
   font-size: 12px;
   line-height: 1.5;
-  color: var(--app-text-secondary);
+  color: var(--app-text-primary);
+  background-color: #f6f8fa;
+  border: 1px solid var(--app-border);
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 展开后换行显示，超过 280px 内部滚动，不把气泡顶得老长 */
+.trace-preview.is-expanded {
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 280px;
+  overflow: auto;
 }
 
 /* ---------------------------------------------------------------------------
