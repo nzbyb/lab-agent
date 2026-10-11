@@ -33,6 +33,18 @@ class ChatRequest(BaseModel):
     # 20 条——前端传的是整段历史，不能因为聊到第 21 句就整个发不出去。
     messages: list[ChatMessage] = Field(min_length=1, max_length=100)
 
+    # 客户端生成的会话标识，用来把这轮对话挂到哪条历史会话上。
+    #
+    # 名字**刻意不叫 conversation_id**：它对应的是 chat_conversation.session_key
+    # 那个字符串，不是数据库的整型主键。两个都叫 id 一定会有人用混。
+    #
+    # 长度和字符集必须卡住：请求体是浏览器发过来的，不卡的话一个超长字符串会
+    # 直接撞上 String(36) 的列宽，在 MySQL 严格模式下变成 500 而不是 422。
+    # 允许 None（老客户端不带这个字段时，这轮就单纯不落库，不影响对话本身）。
+    session_key: str | None = Field(
+        default=None, min_length=8, max_length=36, pattern=r"^[0-9a-zA-Z_-]+$"
+    )
+
     @model_validator(mode="after")
     def _cap_total_content(self):
         total = sum(len(message.content) for message in self.messages)

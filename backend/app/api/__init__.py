@@ -7,6 +7,7 @@ from app.api.equipment import router as equipment_router
 from app.api.reservation import router as reservation_router
 from app.api.statistics import router as statistics_router
 from app.api.ai import router as ai_router
+from app.api.chat import router as chat_router
 
 api = APIRouter(prefix="/api")
 
@@ -18,3 +19,4 @@ api.include_router(equipment_router)
 api.include_router(reservation_router)
 api.include_router(statistics_router)
 api.include_router(ai_router)
+api.include_router(chat_router)
