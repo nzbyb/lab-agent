@@ -2,16 +2,48 @@
   <div>
     <el-card class="chat-card" shadow="never">
       <template #header>
-        <div class="app-card-title">
-          <span>AI智能助手</span>
+        <div class="chat-head">
+          <div class="app-card-title">
+            <span>AI智能助手</span>
+          </div>
+          <el-button
+            link
+            type="primary"
+            :icon="Delete"
+            :disabled="loading || isWelcome"
+            @click="clearChat"
+            >清空对话</el-button
+          >
         </div>
       </template>
 
       <!-- 聊天记录区。高度交给 .chat-card 的 flex 撑开，不再写死 480px：
            写死会在高屏上留一大片空白，矮屏上又把最后几条消息裁掉。 -->
       <div ref="boxRef" class="chat-box">
+        <!-- 空态：一个问题都还没问过时，不显示那条孤零零的欢迎气泡，
+             改成一块有引导的起始面板——顺带把系统能做什么摆到明面上。 -->
+        <div v-if="isWelcome" class="welcome">
+          <div class="welcome-icon">
+            <el-icon><MagicStick /></el-icon>
+          </div>
+          <div class="welcome-title">我是实验室助手小田</div>
+          <div class="welcome-desc">
+            可以问我实验室的开放时间和空闲时段，也可以直接让我帮你预约。
+          </div>
+          <div class="welcome-chips">
+            <button
+              v-for="(question, i) in SUGGESTIONS"
+              :key="i"
+              class="welcome-chip"
+              @click="fillInput(question)"
+            >
+              {{ question }}
+            </button>
+          </div>
+        </div>
+
         <div
-          v-for="(item, index) in messages"
+          v-for="(item, index) in visibleMessages"
           :key="index"
           class="msg-row"
           :class="item.role === 'user' ? 'is-user' : 'is-bot'"
@@ -99,6 +131,7 @@
 
       <div class="composer">
         <el-input
+          ref="inputRef"
           v-model="input"
           type="textarea"
           :rows="2"
@@ -130,6 +163,7 @@ import { ElMessage } from 'element-plus'
 import {
   ArrowRight,
   CircleCheckFilled,
+  Delete,
   Loading,
   MagicStick,
   Promotion
@@ -145,16 +179,51 @@ const userInitial = computed(() => (userStore.userInfo?.name || '我').slice(0, 
 // 气泡上方的说话人名字。登录信息里没有名字时退成「我」，别显示成空白。
 const senderName = (item) => (item.role === 'user' ? userStore.userInfo?.name || '我' : '助手小田')
 
-const messages = ref([
-  {
-    role: 'assistant',
-    content:
-      '您好,我是实验室助手小田。您可以向我询问怎么预约、取消实验室或者设备。也可以帮你预约实验室。'
-  }
-])
+// 欢迎语抽成常量：清空对话时要还原成这一条。
+// 它在空态下并不渲染（由下面的起始面板承担引导），但仍然留在 messages 里
+// 参与 history——保持改造前"模型能看到自己打过招呼"的行为不变。
+const WELCOME_MESSAGE = {
+  role: 'assistant',
+  content:
+    '您好,我是实验室助手小田。您可以向我询问怎么预约、取消实验室或者设备。也可以帮你预约实验室。'
+}
+
+const messages = ref([WELCOME_MESSAGE])
 const input = ref('')
 const loading = ref(false)
 const boxRef = ref()
+const inputRef = ref()
+
+// 空态：只剩那条欢迎语，说明这轮对话还没开始
+const isWelcome = computed(() => messages.value.length <= 1)
+
+// 空态时隐藏 messages[0]，改由起始面板承担引导。
+// 注意它仍然留在 messages 里——它本来就参与 history（模型能看到自己打过招呼），
+// 这里只是不渲染，没有改变发给模型的内容。
+const visibleMessages = computed(() => (isWelcome.value ? messages.value.slice(1) : messages.value))
+
+// 起始面板上的示例问题。点击只填入输入框、不自动发送：
+// 连点几个 chip 就会撞上后端 20 次/分钟的限流，而且"点一下立刻发出去"
+// 太容易误触。填好，让用户自己按发送。
+const SUGGESTIONS = [
+  '现在有哪些实验室开放？',
+  '明天下午 2 点哪个实验室有空？',
+  '帮我预约明天上午 9 点的软件工程实验室'
+]
+
+const fillInput = (text) => {
+  input.value = text
+  inputRef.value?.focus()
+}
+
+const clearChat = () => {
+  // 流式生成中不允许清空：对象虽然从列表里移除了，SSE 回调还会继续往它身上
+  // 追加 token——白跑一场，而且用户会看到"点了没反应"。
+  // 按钮同时置了 disabled，这里再拦一道。
+  if (loading.value) return
+  messages.value = [{ ...WELCOME_MESSAGE }]
+  input.value = ''
+}
 
 // 跟后端 app/schemas/ai.py 的 _MAX_USER_CONTENT 对齐。
 // 两头都卡住，超长消息才会在输入框就被拦下来，而不是发出去吃一个 422。
@@ -368,6 +437,14 @@ const parseMarkdown = (text) => {
   flex-direction: column;
 }
 
+/* 卡片头：标题左、操作右 */
+.chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .chat-box {
   flex: 1;
   min-height: 0;
@@ -375,6 +452,73 @@ const parseMarkdown = (text) => {
   padding: 12px 4px;
   background-color: var(--app-bg-page);
   border-radius: var(--app-radius-md);
+}
+
+/* ---------------------------------------------------------------------------
+ * 空态起始面板
+ *
+ * 改造前这里是一条孤零零的欢迎气泡 + 一大片空白，第一屏什么都不说。
+ * 现在把"我是谁、能干什么、你可以这样问"三件事摆出来，并给几个能直接点的
+ * 入口——示例问题同时也是能力清单。
+ * ------------------------------------------------------------------------- */
+.welcome {
+  height: 100%;
+  /* 矮窗口兜底：内容比聊天区高时让 .chat-box 去滚，不把它压扁 */
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  text-align: center;
+}
+.welcome-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 14px;
+  font-size: 26px;
+  color: var(--app-primary);
+  background-color: var(--el-color-primary-light-9);
+  border-radius: 50%;
+}
+.welcome-title {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+}
+.welcome-desc {
+  max-width: 420px;
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--app-text-secondary);
+}
+.welcome-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 20px;
+}
+.welcome-chip {
+  padding: 7px 14px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--app-text-primary);
+  background-color: #fff;
+  border: 1px solid var(--app-border);
+  border-radius: 16px;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    color 0.2s;
+}
+.welcome-chip:hover {
+  color: var(--app-primary);
+  border-color: var(--app-primary);
 }
 
 /* 消息行：助手头像在左；用户整行翻转，头像落到右边 */
