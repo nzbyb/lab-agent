@@ -37,6 +37,37 @@ body,
   --app-space-sm: 10px;
   --app-space-md: 16px;
   --app-space-lg: 30px;
+
+  /* -------------------------------------------------------------------------
+   * 以下为首页与 AI 助手两页改造时新增（2026-10-11）。
+   *
+   * 纪律：**只新增，绝不修改上面任何一个既有值**。上面那些被 15 个页面引用着，
+   * 改一个值等于同时重绘另外 13 页；而新增的变量此刻没有任何旧规则引用，波及面为零。
+   * ----------------------------------------------------------------------- */
+
+  /* 描边。取 EP 的 light 档，好让卡片边框与输入框、表格线落在同一个色阶上。 */
+  --app-border: var(--el-border-color-light);
+  --app-border-strong: var(--el-border-color);
+
+  /* 主色。指向 EP 的变量而非写死 #409eff：以后换主题只需覆盖 --el-color-primary。 */
+  --app-primary: var(--el-color-primary);
+
+  /* 大圆角，用于卡片与指标磁贴 */
+  --app-radius-lg: 10px;
+
+  /* 卡片阴影。刻意做得极浅——这两个页面的层次靠描边和留白建立，阴影只作点缀。 */
+  --app-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+
+  /* 图表网格线。比 --app-border 更淡：网格线是背景，不该和内容抢注意力。 */
+  --app-grid-line: #eef0f3;
+
+  /* 预约状态色。用语义名指向 EP 的调色板，不在这里再抄一遍色值。
+     待审核=琥珀、已通过=绿、已拒绝=红；已取消用中性灰而不是红——
+     取消是"失效"，不是"出错"，标成红色会让人误以为出了问题。 */
+  --app-status-pending: var(--el-color-warning);
+  --app-status-approved: var(--el-color-success);
+  --app-status-rejected: var(--el-color-danger);
+  --app-status-canceled: var(--el-color-info);
 }
 
 body {
