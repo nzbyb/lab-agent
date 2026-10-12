@@ -49,7 +49,12 @@ backend/uploads/
 backend/data/chroma/
 
 # ---------- 临时文件 ----------
+# 下面两行和 .tmp_* 是三种不同的写法，缺一不可：排查问题时随手建的脚本
+# 用的是下划线开头（_tmp_xxx/、_probe_xxx.py），只有点开头那条的话它们
+# 一个都盖不住——而这类脚本里常常抄着真实的 API key 和机器上的绝对路径。
 .tmp_*
+_tmp_*
+_probe_*
 *.tmp
 tmp/
 temp/
