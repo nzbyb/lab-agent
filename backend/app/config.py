@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     LLM_BASE_URL: str
 
+    # 跨域白名单，逗号分隔。只有前后端分开跑（本机 npm run dev，前端在 5173）时才用得上；
+    # 上线让前后端同域（nginx 把 /api 反代给后端）就不发预检请求了，留空也不影响。
+    # 这里刻意用 str 而不是 list[str]：pydantic-settings 见到列表字段会把值当 JSON 解析，
+    # 写成 a,b 会直接报错，只有 ["a","b"] 才认——让它自己 split 更好用。
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env", env_file_encoding="utf-8"
     )
@@ -43,6 +49,11 @@ _validate_jwt_secret()
 
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# 白名单转成列表，顺手丢掉空项——写成 "a, b," 这种带尾逗号的形式也不会多出一个空字符串
+ALLOWED_ORIGINS = [
+    origin.strip() for origin in settings.CORS_ORIGINS.split(",") if origin.strip()
+]
 MAX_FILE_SIZE = 100 * 1024 * 1024
 
 ALLOWED_EXTENSIONS = {
