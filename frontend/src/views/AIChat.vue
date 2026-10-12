@@ -71,13 +71,19 @@
             </div>
 
             <div class="bubble">
-              <!-- 当前进行中的一句话，如「正在思考...」。一旦有工具调用，
-                   这个位置就交给下面的执行时间线，避免和步骤里的「进行中」重复。 -->
+              <!-- 当前进行中的一句话，如「正在思考...」。
+                   只在「没有工具正在跑」时显示：工具执行期间这个位置交给下面的
+                   时间线，免得和步骤里那句「正在查询...」重复。但工具跑完之后模型
+                   还要写答案——实测这一段能超过 20 秒——那段时间必须把状态显示回来，
+                   否则界面上只剩一句「XX完成」，看着像是已经答完了。 -->
               <div
-                v-if="item.role === 'assistant' && item.status && !item.steps?.length"
+                v-if="item.role === 'assistant' && item.status && !isRunning(item)"
                 class="bubble-status"
               >
                 {{ item.status }}
+                <!-- 秒数自己往上走。模型思考期间界面不会有任何别的变化，
+                     没有这个就只能靠猜「它到底还活着没」。 -->
+                <span v-if="loading" class="bubble-status-clock">{{ waited }}s</span>
               </div>
 
               <!-- 本轮的工具调用过程。运行中默认展开——要能当场看到 Agent 在查什么；
@@ -200,7 +206,7 @@ import {
   getConversationMessagesApi,
   listConversationsApi
 } from '@/api/ai'
-import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -277,6 +283,30 @@ const saved = readSaved()
 const messages = ref([{ ...WELCOME_MESSAGE }])
 const input = ref('')
 const loading = ref(false)
+
+// 本轮已经等了多久（秒）。
+//
+// 为什么要这个：这个模型（deepseek-flash）是「先思考、再作答」的，先流出来的是
+// thinking 那一部分。而 langchain-openai 明确不提取第三方厂商的 reasoning_content
+// 字段（它类文档里写着要用 provider-specific 子类自己接），所以思考内容到不了这里。
+// 结果就是模型思考的那十几二十秒里界面上一个字都不会变，光看一句「正在思考...」
+// 分不出是「还在跑」还是「已经死了」。让秒数自己往上走，是成本最低的活体信号。
+const waited = ref(0)
+let waitTimer = null
+
+const startWaitTimer = () => {
+  waited.value = 0
+  clearInterval(waitTimer)
+  waitTimer = setInterval(() => {
+    waited.value += 1
+  }, 1000)
+}
+
+const stopWaitTimer = () => {
+  clearInterval(waitTimer)
+  waitTimer = null
+}
+
 const boxRef = ref()
 const inputRef = ref()
 
@@ -506,6 +536,10 @@ onMounted(async () => {
   if (!ok && !loading.value) startNewSession()
 })
 
+// 切页面时把秒数定时器停掉。不停的话它会一直往上走，回到本页时
+// 看到一个从没发过消息却还在数秒的计数器。
+onBeforeUnmount(stopWaitTimer)
+
 const scrollToBottom = () => {
   nextTick(() => {
     const elem = boxRef.value
@@ -520,6 +554,7 @@ const handleSend = async () => {
   messages.value.push({ id: nextId(), role: 'user', content: text, time: nowStamp() })
   input.value = ''
   loading.value = true
+  startWaitTimer()
   scrollToBottom()
 
   // 必须用 reactive: 普通对象 push 后再改字段，视图可能不更新
@@ -627,6 +662,7 @@ const handleSend = async () => {
     ElMessage.error(err.message || '网络异常')
   } finally {
     loading.value = false
+    stopWaitTimer()
     assistant.status = ''
     // 本轮结束把过程收起成一行摘要。用户手动点开过就不动它——刚点开就被
     // 合上是比"没收起"更烦人的体验。
@@ -665,7 +701,9 @@ const toggleTrace = (item) => {
   item.stepsTouched = true
 }
 
-const isRunning = (item) => item.steps.some((step) => step.state === 'running')
+// steps 可能不存在：从后端读回来的历史消息只带 role/content，没有这个字段。
+// 状态行现在要按它判断该不该让位给时间线，所以这里必须能安全处理空值。
+const isRunning = (item) => (item.steps || []).some((step) => step.state === 'running')
 
 // 收起时那一行摘要：去重后的工具名，如「检索实验室知识库 · 查询空闲时段」
 const stepSummary = (item) => [...new Set(item.steps.map((step) => step.label))].join(' · ')
@@ -904,6 +942,12 @@ const parseMarkdown = (text) => {
 }
 .is-user .bubble-status {
   color: rgba(255, 255, 255, 0.8);
+}
+/* 等了多少秒。等宽字体免得数字跳动时后面的字跟着抖。 */
+.bubble-status-clock {
+  margin-left: 6px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
 }
 
 /* ---------------------------------------------------------------------------
