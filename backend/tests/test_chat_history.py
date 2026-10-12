@@ -33,7 +33,7 @@ def _fake_stream(*, text="你好", with_tool=True, tail_error=False):
     """
     state = {"finished": False}
 
-    async def stream(db, current_user, data):
+    async def stream(user_id, data):
         yield {"type": "status", "message": "正在思考..."}
         if with_tool:
             yield {"type": "tool_start", "name": "get_today", "label": "获取今天的日期"}
@@ -168,7 +168,7 @@ class TestStreamPersistence:
         )
 
         async def scenario():
-            gen = _event_stream(db, user, data)
+            gen = _event_stream(user.id, data)
             seen = []
             async for event in gen:
                 seen.append(event)
@@ -202,7 +202,7 @@ class TestStreamPersistence:
         """
         state = {"blocked": False}
 
-        async def stream(db_, current_user, data):
+        async def stream(user_id, data):
             yield {"type": "token", "content": "说到一半"}
             state["blocked"] = True
             # 永远挂住，等被取消——模拟模型还在生成、连接突然断掉
@@ -217,7 +217,7 @@ class TestStreamPersistence:
         )
 
         async def scenario():
-            gen = _event_stream(db, user, data)
+            gen = _event_stream(user.id, data)
 
             async def consume():
                 async for _ in gen:

@@ -3,8 +3,6 @@ import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from app.common.response import Response
-from sqlalchemy.orm import Session
-from app.database import get_db
 
 from app.dependencies.auth import get_current_user
 from app.limiter import limiter
@@ -49,15 +47,15 @@ def _finish_step(steps: list, event: dict) -> None:
     )
 
 
-async def _event_stream(db: Session, current_user: User, data: ChatRequest):
+async def _event_stream(user_id: int, data: ChatRequest):
     """把 Agent 的事件流转成 SSE，同时把这轮对话落进历史。
 
     提成模块级函数（不放路由体里内联）是为了测试能直接驱动它——包括拿到第一个
     事件后立刻 aclose() 来模拟「用户关掉网页」，那是本功能最容易出错的一条路径。
     """
-    # db 和 current_user 是请求作用域的对象，生成器真正开始跑时它们已经被回收过了。
-    # 先把要用的标量取出来，后面一律只用这两个局部变量，不再碰原对象。
-    user_id = current_user.id
+    # 只收一个整数 user_id，不收请求作用域的会话或用户对象——生成器真正开始跑时
+    # 它们已经被回收了。工具各自开自己的会话（见 agent_tools.build_tools），落库走
+    # chat_service 自己的会话，所以这里没有东西需要往下传。
     session_key = data.session_key
 
     # 阶段 A：用户提问先落库。
@@ -70,7 +68,7 @@ async def _event_stream(db: Session, current_user: User, data: ChatRequest):
     steps: list[dict] = []
 
     try:
-        async for event in agent_service.stream_agent(db, current_user, data):
+        async for event in agent_service.stream_agent(user_id, data):
             etype = event.get("type")
             if etype == "token":
                 text_parts.append(event.get("content") or "")
@@ -121,10 +119,11 @@ async def chat_stream(
     request: Request,
     data: ChatRequest,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
 ):
+    # 在路由体里就把 id 取出来（这时依赖的会话还活着），生成器只认这个整数。
+    # 不再注入 get_db：这个接口自己一个查询都不做，开了也是白占一条连接。
     return StreamingResponse(
-        _event_stream(db, current_user, data),
+        _event_stream(current_user.id, data),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

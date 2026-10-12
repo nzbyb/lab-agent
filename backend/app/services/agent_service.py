@@ -2,13 +2,11 @@ import traceback
 from typing import Any
 
 from langchain_openai import ChatOpenAI
-from sqlalchemy.orm import Session
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage, ToolMessage
 from langgraph.graph import START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from app.common.exceptions import BusinessException
-from app.models.user import User
 from app.schemas.ai import ChatRequest
 from app.services import agent_tools
 from app.config import settings
@@ -86,10 +84,10 @@ def _chunk_text(chunk: Any):
     return str(content) if content is not None else ""
 
 
-async def stream_agent(db: Session, current_user: User, data: ChatRequest):
+async def stream_agent(user_id: int, data: ChatRequest):
     try:
         history = _build_history(data)
-        agent = build_agent(db, current_user)
+        agent = build_agent(user_id)
         inputs = {"messages": [SystemMessage(content=SYSTEM_PROMPT), *history]}
 
         yield {"type": "status", "message": "正在思考..."}
@@ -133,8 +131,9 @@ async def stream_agent(db: Session, current_user: User, data: ChatRequest):
         yield {"type": "error", "message": "大模型调用失败，请稍后重试"}
 
 
-def build_agent(db: Session, current_user: User):
-    tools = agent_tools.build_tools(db, current_user)
+def build_agent(user_id: int):
+    # 只传 id，不传会话：工具各自开会话，见 agent_tools.build_tools 的说明。
+    tools = agent_tools.build_tools(user_id)
     llm = ChatOpenAI(
         api_key=settings.LLM_API_KEY,
         base_url=settings.LLM_BASE_URL,

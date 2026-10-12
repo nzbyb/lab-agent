@@ -368,7 +368,7 @@ class TestToolErrorMasking:
             raise RuntimeError("SELECT * FROM users WHERE password='hunter2'")
 
         monkeypatch.setattr(kb_service, "search", boom)
-        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+        tools = {t.name: t for t in agent_tools.build_tools(make_user().id)}
         result = json.loads(tools["search_lab_docs"].invoke("随便问点什么"))
 
         assert result["ok"] is False
@@ -382,7 +382,7 @@ class TestToolErrorMasking:
         """
         from app.services import agent_tools
 
-        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+        tools = {t.name: t for t in agent_tools.build_tools(make_user().id)}
         result = json.loads(
             tools["create_lab_reservation"].invoke(
                 {
@@ -432,7 +432,7 @@ class TestChatRateLimit:
         from app.services import agent_service
 
         # 只验限流本身，不去真调模型：把 SSE 生成器换成一个空实现。
-        async def fake_stream(db, current_user, data):
+        async def fake_stream(user_id, data):
             yield {"type": "done"}
 
         monkeypatch.setattr(agent_service, "stream_agent", fake_stream)
@@ -684,7 +684,7 @@ class TestClosedLabEquipmentVisibility:
 
         lab = make_lab(status=0)
         make_equipment(lab_id=lab.id)
-        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+        tools = {t.name: t for t in agent_tools.build_tools(make_user().id)}
 
         result = json.loads(tools["list_lab_equipments"].invoke({"lab_id": lab.id}))
 
@@ -699,7 +699,7 @@ class TestClosedLabEquipmentVisibility:
 
         lab = make_lab(status=1)
         eq = make_equipment(lab_id=lab.id)
-        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+        tools = {t.name: t for t in agent_tools.build_tools(make_user().id)}
 
         result = json.loads(tools["list_lab_equipments"].invoke({"lab_id": lab.id}))
 
@@ -710,7 +710,7 @@ class TestClosedLabEquipmentVisibility:
         """新加的校验不能把 lab_service.get_lab 的「实验室不存在」吞成笼统失败"""
         from app.services import agent_tools
 
-        tools = {t.name: t for t in agent_tools.build_tools(db, make_user())}
+        tools = {t.name: t for t in agent_tools.build_tools(make_user().id)}
         result = json.loads(tools["list_lab_equipments"].invoke({"lab_id": 999999}))
 
         assert result["ok"] is False
