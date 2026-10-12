@@ -216,13 +216,17 @@ const kpiTiles = computed(() => {
   return [
     {
       key: 'lab',
-      label: '开放实验室',
+      label: '已启用实验室',
       icon: OfficeBuilding,
       value: labOpen,
       unit: '间',
+      // 这里的数字读的是 labs.status = 1，意思是"管理员启用了这几间"，
+      // 跟"此刻开着门"是两回事：一间启用的实验室，晚上也是关门的。
+      // 所以标题写"已启用"，不写"开放"——学生端同一时刻可能正显示"已闭馆"，
+      // 两边用同一个词会让人以为有一边错了。
       foot:
         labTotal > labOpen
-          ? `共 ${labTotal} 间，${labTotal - labOpen} 间已关闭`
+          ? `共 ${labTotal} 间，${labTotal - labOpen} 间已停用`
           : `共 ${labTotal} 间`
     },
     {

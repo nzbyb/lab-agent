@@ -7,7 +7,7 @@
             <span>{{ lab?.name || '实验室' }}设备列表 </span>
           </div>
           <div>
-            <!-- 和 LabList.vue 的「预约」按钮保持一致：关闭中的实验室不该能打开预约弹窗。
+            <!-- 和 LabList.vue 的「预约」按钮保持一致：已停用的实验室不该能打开预约弹窗。
                  入口 LabList 的「查看设备」没有 status 判断，所以这里必须自己挡一道，
                  否则用户点得动、一路填完，最后才被后端「实验室未开放预约」拒掉。 -->
             <el-button type="primary" :disabled="lab?.status !== 1" @click="handleReserveLab"
@@ -27,24 +27,20 @@
           border-radius: 6px;
         "
       >
-        <!-- 把实验室状态显式标出来。上面两个预约按钮在实验室关闭时会全部置灰，
+        <!-- 状态要标清楚。上面两个预约按钮在实验室停用时会全部置灰，
              不给原因的话用户只会看到一排点不动的按钮，以为是页面坏了。
-             标签用词和配色跟 Lab.vue 的实验室列表保持一致（开启/关闭 + success/danger）。 -->
+             四态（已停用 / 今日不开放 / 开放中 / 已闭馆）跟 LabList.vue 用同一套，
+             判断逻辑在 utils/lab.js —— 那里说了为什么不自己拿当前时间比时段。 -->
         <div style="margin-bottom: 10px">
-          <el-tag
-            :type="lab.status === 1 ? 'success' : 'danger'"
-            size="small"
-            style="margin-right: 8px"
-          >
-            {{ lab.status === 1 ? '开启' : '关闭' }}
+          <el-tag :type="labOpenState(lab).type" size="small" style="margin-right: 8px">
+            {{ labOpenState(lab).text }}
           </el-tag>
           简介: {{ lab.description }}
         </div>
         <div>
           位置: {{ lab.location }} <span style="margin: 0 10px">|</span> 容纳 {{ lab.capacity }} 人
           <span style="margin: 0 10px">|</span>
-          开放时间:
-          {{ lab.open_time && lab.close_time ? `${lab.open_time} - ${lab.close_time}` : '-' }}
+          今日开放: {{ todayHoursText(lab) || '不开放' }}
         </div>
       </div>
 
@@ -76,9 +72,10 @@
         <el-table-column label="操作" width="100">
           <template #default="{ row }">
             <!-- 除设备自身状态外还要看实验室状态。后端 reservation_service.create_reservation
-                 是先判 lab.status 再判设备的，所以实验室关闭时这里放行也没用——用户能一路
+                 是先判 lab.status 再判设备的，所以实验室停用时这里放行也没用——用户能一路
                  填完表单，最后才被「实验室未开放预约」拒掉。lab 拉取失败时为 null，
-                 lab?.status !== 1 得到 true → 保持禁用（fail-closed）。 -->
+                 lab?.status !== 1 得到 true → 保持禁用（fail-closed）。
+                 注意只看 status（停用了没），不看 open_now：晚上来约明天白天的时段是正常的。 -->
             <el-button
               :disabled="!row.status || lab?.status !== 1"
               type="primary"
@@ -117,6 +114,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEquipmentPageListApi } from '@/api/equipment'
 import ReserveDialog from '@/components/ReserveDialog.vue'
+import { labOpenState, todayHoursText } from '@/utils/lab'
 
 const route = useRoute()
 const router = useRouter()
@@ -154,7 +152,7 @@ const ensureLabOpen = async () => {
   }
   if (!fresh) return false
   if (fresh.status !== 1) {
-    ElMessage.warning('该实验室已关闭，暂不可预约')
+    ElMessage.warning('该实验室已停用，暂不可预约')
     return false
   }
   return true

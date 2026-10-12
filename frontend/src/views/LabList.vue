@@ -40,12 +40,14 @@
               <div class="app-card-title" style="margin-top: 10px">
                 {{ item.name }}
               </div>
-              <!-- 把状态显式标出来。下面的「预约」按钮在实验室关闭时会置灰，
-                   不给原因的话用户只看到一颗点不动的按钮，以为是页面坏了。
-                   用词和配色对齐 Lab.vue 列表页与 LabEquipment.vue 详情页（开启/关闭 + success/danger）。 -->
+              <!-- 状态分四态：已停用 / 今日不开放 / 开放中 / 已闭馆。
+                   原来只有一颗读 status 的「开启/关闭」，用户看到"开启"会理解成
+                   "现在能去"——而晚上 9 点它照样显示"开启"，因为管理员确实启用着。
+                   四态全部由后端算好（status / today_open_time / open_now），
+                   前端不自己拿当前时间比时段，理由见 utils/lab.js。 -->
               <div style="margin-top: 8px">
-                <el-tag :type="item.status === 1 ? 'success' : 'danger'" size="small">
-                  {{ item.status === 1 ? '开启' : '关闭' }}
+                <el-tag :type="labOpenState(item).type" size="small">
+                  {{ labOpenState(item).text }}
                 </el-tag>
               </div>
               <div style="font-size: 13px; margin-top: 8px; color: #666">
@@ -55,9 +57,7 @@
                 容量：{{ item.capacity }} 人
               </div>
               <div style="font-size: 13px; margin-top: 6px; color: #666">
-                开放时间：{{
-                  item.open_time && item.close_time ? `${item.open_time} - ${item.close_time}` : '-'
-                }}
+                今日开放：{{ todayHoursText(item) || '不开放' }}
               </div>
               <div style="margin-top: 12px; display: flex; gap: 8px">
                 <el-button style="flex: 1" @click="handleViewEquipment(item)">查看设备</el-button>
@@ -99,6 +99,7 @@ import { Search } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import ReserveDialog from '@/components/ReserveDialog.vue'
+import { labOpenState, todayHoursText } from '@/utils/lab'
 
 const reserveVisible = ref(false)
 const currentLab = ref(null)
@@ -131,7 +132,7 @@ const ensureLabOpen = async (lab) => {
   // code !== 200 时拦截器已弹 toast 且**不 reject**，这里只取数据，不再补第二条提示
   if (res?.code !== 200) return false
   if (res.data?.status !== 1) {
-    ElMessage.warning('该实验室已关闭，暂不可预约')
+    ElMessage.warning('该实验室已停用，暂不可预约')
     return false
   }
   return true
