@@ -156,7 +156,24 @@ def make_user(db):
 
 @pytest.fixture
 def make_lab(db):
-    def _make(name="计算机实验室", open_time="08:00", close_time="21:00", status=1):
+    def _make(
+        name="计算机实验室",
+        open_time="08:00",
+        close_time="21:00",
+        status=1,
+        weekend_open_time=None,
+        weekend_close_time=None,
+    ):
+        """默认造一间**天天都开**的实验室。
+
+        周末两列默认跟着周中走（而不是留空），是因为 `booking` 夹具默认约"明天"：
+        要是周末留空 = 周末不开放，那么每逢周五、周六跑测试，一堆用例都会因为
+        "当天不开放"而红——**只在周末红**，是最难查的那种。想测"周末不开放"的用例
+        自己显式传 weekend_open_time="" 或钉一个周六的日期。
+
+        跟周中派生而不是写死 21:00：`make_lab(close_time="18:00")` 之后，
+        周末也得是 18:00 关门，否则那条"晚于关闭时间"的用例会在周末悄悄放行。
+        """
         lab = Lab(
             name=name,
             description=name,
@@ -164,6 +181,8 @@ def make_lab(db):
             capacity=40,
             open_time=open_time,
             close_time=close_time,
+            weekend_open_time=open_time if weekend_open_time is None else weekend_open_time,
+            weekend_close_time=close_time if weekend_close_time is None else weekend_close_time,
             status=status,
         )
         db.add(lab)

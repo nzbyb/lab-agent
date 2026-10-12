@@ -19,6 +19,9 @@ from app.schemas.reservation import (
     ReservationResponse,
     normalize_date,
 )
+# 开放时段按周中/周末分两套，"某一天该用哪套"只在 lab_service 里判断，
+# 这里和 agent 工具都从它派生，不再各自读 lab.open_time。
+from app.services import lab_service
 
 
 def get_reservation_page_list(
@@ -135,9 +138,16 @@ def create_reservation(db: Session, current_user: User, data: ReservationCreateR
         raise BusinessException(message="实验室不存在")
     if lab.status != 1:
         raise BusinessException(message="实验室未开放预约")
-    if lab.open_time and data.start_time < lab.open_time:
+    # 周中和周末是两套时段，用预约的那一天去取（date 已由 schema 规范化成 YYYY-MM-DD）。
+    day_open, day_close = lab_service.resolve_open_hours(lab, data.date)
+    if day_open is None:
+        # 这一天的时段压根没设。以前这种情况是"没有限制、随便约"，
+        # 现在统一成"当天不开放"——时段既然按天分叉，"没设"就必须有个明确含义，
+        # 而"随便约"跟上面那条"要管理员启用才能约"本来就是矛盾的。
+        raise BusinessException(message="该实验室当天不开放")
+    if data.start_time < day_open:
         raise BusinessException(message="预约的开始时间不能早于实验室开放时间")
-    if lab.close_time and data.end_time > lab.close_time:
+    if data.end_time > day_close:
         raise BusinessException(message="预约的结束时间不能晚于实验室关闭时间")
 
     if data.equipment_id:
@@ -217,8 +227,14 @@ def get_free_slots(
         if equipment.lab_id != lab_id:
             raise BusinessException(message="该设备不属于所选实验室")
 
-    open_time = lab.open_time or "00:00"
-    close_time = lab.close_time or "23:59"
+    # 这一天的时段（周中/周末两套，date 已规范化）。注意这个判断要留在设备归属校验**之后**：
+    # 报"某台设备不属于这个实验室"比报"当天不开放"更贴近用户实际搞错的地方。
+    #
+    # 以前这里写的是 `lab.open_time or "00:00"`——没设时段就等于全天都能约，
+    # 于是校验那边拦得住、空闲查询这边却列出一整天。现在两头统一：没设就是当天不开放。
+    open_time, close_time = lab_service.resolve_open_hours(lab, date)
+    if open_time is None:
+        raise BusinessException(message="该实验室当天不开放")
     cursor = open_time
     # 查的是今天的话，已经过去的时间不算空闲
     if date == today:
