@@ -4,7 +4,7 @@
     <div class="brand-panel">
       <div class="brand-inner">
         <div class="brand-mark">
-          <img src="@/assets/imgs/logo.jpg" alt="智能实验室预约系统" />
+          <img src="@/assets/imgs/logo.svg" alt="智能实验室预约系统" />
         </div>
         <h1 class="brand-title">智能实验室预约系统</h1>
         <p class="brand-subtitle">FastAPI + Vue 3 · AI Agent 驱动的实验室预约与管理平台</p>
@@ -204,30 +204,22 @@ const login = async () => {
   margin: 0 auto;
 }
 
-/* logo 原图是不透明白底 jpg，直接放渐变上会是一块白方块，
- * 所以垫一个白色圆角块当"app 图标"。 */
+/* logo 现在是自带圆角蓝底的 SVG，图形铺满整块画布、四周没有白边，
+ * 所以这里不再需要白色垫块，也不需要放大裁切。
+ * （旧图是 1280×1706 的白底 jpg，图形只占中间 37.5%×23.8% 一块，
+ * 当年要靠 White 垫块 + scale(2.3) 才能把图形顶出来。） */
 .brand-mark {
   width: 84px;
   height: 84px;
-  border-radius: 20px;
-  background: #fff;
-  overflow: hidden;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+  /* 图标自身是圆角透明的，box-shadow 会照方形元素画出一圈直角阴影，
+   * drop-shadow 才是跟着图标轮廓走的。 */
+  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.18));
 }
 
-/* 原图 1280×1706，实际图形只占 37.5% 宽 × 23.8% 高，四周全是白边，
- * 但图形本身是正居中的（扫像素实测中心 0.498 / 0.498）。
- * 不放大时：object-fit: cover 把图缩成 84×112，可见图形只剩约 31×27px，
- * 占方块 12% 面积——看起来就是"白方块正中一个小绿点"。
- * 按中心放大 2.3 倍 → 约 72×61px，占 62.8% 面积。图形居中（放大后偏移 0.23px），
- * 所以放大不会偏。原图 1280px 宽，放大后每个 CSS 像素仍摊到约 6.6 个源像素
- * （2x 屏 3.3 个），是降采样，不会糊。 */
 .brand-mark img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
   display: block;
-  transform: scale(2.3);
 }
 
 /* 两级标题的字号都在这里显式写死，不靠 h1/h2 的浏览器默认值。
@@ -361,7 +353,6 @@ const login = async () => {
   .brand-mark {
     width: 56px;
     height: 56px;
-    border-radius: 14px;
   }
 
   .brand-title {

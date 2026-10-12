@@ -12,7 +12,7 @@
         <div
           style="flex: 1; display: flex; align-items: center; font-size: 24px; font-weight: bold"
         >
-          <img src="@/assets/imgs/logo.jpg" alt="Logo" style="width: 80px" />
+          <img src="@/assets/imgs/logo.svg" alt="Logo" style="width: 48px; height: 48px" />
           <div style="margin-left: 5px">智能实验室预约系统</div>
         </div>
         <div>
