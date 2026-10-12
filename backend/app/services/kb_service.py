@@ -43,9 +43,32 @@ def get_embedding_fn():
     global _embedding_fn
     if _embedding_fn is not None:
         return _embedding_fn
-    _embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL_NAME
-    )
+    # 优先按「本地已有缓存」加载：不联网，也就不会去 HuggingFace 问"模型有没有更新"。
+    #
+    # 这一问看着无害，其实很贵。模型早就下到本地了（~/.cache/huggingface，约 92MB），
+    # 但 huggingface_hub 每次装载仍要 HEAD 一遍远端取 commit hash。国内网这个请求
+    # 连 TCP 都建不起来，卡满 21 秒（WinError 10060）才放弃，然后重试 5 次。
+    # 实测同一个模型：联网问 → 308 秒，local_files_only → 5.6 秒。
+    #
+    # 这笔代价全落在启动上，而启动期间 uvicorn 还没把端口打开（监听 socket 是在
+    # lifespan 跑完之后才建的），所以这几分钟里前端发什么都连不上——「热重载慢」
+    # 和「老是连接失败」是同一个病，不是两件事。
+    try:
+        _embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL_NAME, local_files_only=True
+        )
+    except Exception:
+        # 本地没有（新机器第一次跑就是这种）。退回联网：照旧去 HuggingFace 下载，
+        # 只慢这一次，下完以后都走上面那条快路。
+        # 实测这条退路在模型确实不存在时约 5 秒就报错返回，不会卡在超时上，
+        # 所以拿它兜底是安全的——只有真需要下载时才会付出慢的代价。
+        logger.info(
+            "本地缓存里没有 %s，改为联网加载（首次会去 HuggingFace 下载）",
+            EMBEDDING_MODEL_NAME,
+        )
+        _embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name=EMBEDDING_MODEL_NAME
+        )
     return _embedding_fn
 
 
