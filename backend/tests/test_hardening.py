@@ -666,8 +666,9 @@ class TestEquipmentConflictScope:
 class TestClosedLabEquipmentVisibility:
     """B3：agent 的 list_lab_equipments 以前不判实验室状态。
 
-    同批的 list_open_labs 硬编码 status=1、list_lab_free_slots 走 get_free_slots
-    也会抛「实验室未开放预约」，只有它把 lab_id 直接透传给
+    同批的 list_labs 和 list_lab_free_slots 都会挡住已停用的实验室
+    （list_labs 列出它但 enabled=false，list_lab_free_slots 走 get_free_slots
+    会抛「实验室未开放预约」），只有它把 lab_id 直接透传给
     equipment_service.get_equipment_page_list（那个函数只按 lab_id/keywords 过滤）。
     结果是模型能列出已关闭实验室的设备、带用户走完确认流程，最后才在
     create_lab_reservation 拿到「实验室未开放预约」——和前端入口一样，

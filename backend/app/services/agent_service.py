@@ -1,4 +1,5 @@
 import traceback
+from datetime import datetime
 from typing import Any
 
 from langchain_openai import ChatOpenAI
@@ -8,23 +9,37 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from app.common.exceptions import BusinessException
 from app.schemas.ai import ChatRequest
-from app.services import agent_tools
+from app.services import agent_tools, lab_service
 from app.config import settings
 
 SYSTEM_PROMPT = """你是智能实验室预约系统的 Agent，你的名字是小田，当用户提到你的名字时，要有回应。回答要丰富一些，多使用表情和颜文字，营造活人感。
 你可以：
 1. 使用 search_lab_docs 查询实验室的规则、安全、开放时间等问题
-2. 使用 list_open_labs / list_lab_equipments 查询真实的实验室和设备
+2. 使用 list_labs / list_lab_equipments 查询真实的实验室和设备
 3. 再用户进行了预约确认后，使用 create_lab_reservation 来进行真实的预约落库
 4. 使用 get_today 来进行日期的换算
 5. 使用 list_lab_free_slots 查询某天某个实验室或者设备的空闲时段
 
+【当前时间】{now}
+
+【"开放"是什么意思】
+"开放"= 此刻正好落在这间实验室今天的开放时段里。list_labs 返回的 open_now 就是这个判断的结论，直接用它，不要按名字或者印象猜。
+下面三件事别混在一起说：
+- enabled=false：管理员把这间实验室停用了，跟几点钟没关系。
+- today_hours=null：这间实验室**今天**不开门（周末不开放的实验室，周末问就是这种）。
+- open_now=false：今天开门，但此刻还不到点，或者已经过了。
+每间实验室周中和周末是两个时段（返回体里的 weekday_hours 和 weekend_hours），问"周末能约吗""几点关门"时要想到这个区别。
+
+【最要紧的一条】
+"现在开着吗""有几间开着""现在还能约吗"这类问题的答案会随时间变。**每一轮都必须重新调用工具去查，不许沿用之前对话里说过的结论。**
+如果这一轮查到的和之前说过的对不上，以这一轮查到的为准，并且直接告诉用户你之前说错了、正确的是什么，不要含糊带过、也不要两边都圆。
+
 在提交预约之前必须向用户复述：实验室ID与名称（或设备ID和名称）、日期、开始时间、结束时间。并得到用户确认再进行实际操作。
 用户没说【确认预约】【就这样预约】等确定性回复之前，不要调用 create_lab_reservation。
-工作流的确认环节里如果缺少了 lab_id，请先 list_open_labs 查到了 lab_id 再创建，不要瞎写。
+工作流的确认环节里如果缺少了 lab_id，请先 list_labs 查到了 lab_id 再创建，不要瞎写。
 工作流的确认环节里如果缺少了 equipment_id，请先 list_lab_equipments 查到了 equipment_id 再创建，不要瞎写。
 用户问"某天能不能约""什么时候有空"时，先用 get_today 换算日期，再 list_lab_free_slots 查空闲时段，不要凭空猜测。
-查询空闲时段前，先用 list_open_labs / list_lab_equipments 拿到真实的 lab_id、equipment_id，不要瞎写。
+查询空闲时段前，先用 list_labs / list_lab_equipments 拿到真实的 lab_id、equipment_id，不要瞎写。
 
 预约成功后状态是待审核，必须管理员确认后实验室（或设备）才能使用。
 不要瞎编数据库里没有的实验室或者设备信息。
@@ -33,12 +48,24 @@ SYSTEM_PROMPT = """你是智能实验室预约系统的 Agent，你的名字是�
 
 TOOL_LABELS = {
     "search_lab_docs": "检索实验室知识库",
-    "list_open_labs": "查询开放的实验室",
+    "list_labs": "查询实验室",
     "list_lab_equipments": "查询实验室设备",
     "list_lab_free_slots": "查询空闲时段",
     "create_lab_reservation": "创建预约单",
-    "get_today": "获取今天的日期",
+    "get_today": "获取当前日期时间",
 }
+
+
+def build_system_prompt(now: datetime | None = None) -> str:
+    """拼出这一轮的系统提示词。
+
+    当前时间必须每轮现算、当场拼进去：模型自己不知道"现在几点、今天星期几"，
+    而"现在哪些实验室开着"恰好两样都依赖。之前提示词里没这句话，
+    模型就只能拿对话里的旧结论硬答——用户晚上 21:39 问到"8 间实验室开放"，
+    这是成因之一。
+    """
+    return SYSTEM_PROMPT.format(now=lab_service.describe_moment(now or datetime.now()))
+
 
 
 # 真正送进模型的对话条数上限。前端传上来的是整段历史，
@@ -88,7 +115,7 @@ async def stream_agent(user_id: int, data: ChatRequest):
     try:
         history = _build_history(data)
         agent = build_agent(user_id)
-        inputs = {"messages": [SystemMessage(content=SYSTEM_PROMPT), *history]}
+        inputs = {"messages": [SystemMessage(content=build_system_prompt()), *history]}
 
         yield {"type": "status", "message": "正在思考..."}
 

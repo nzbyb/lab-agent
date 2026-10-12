@@ -25,6 +25,17 @@ def _tool_failed(tool_name: str) -> str:
     return json.dumps({"ok": False, "error": "操作失败，请稍后重试"}, ensure_ascii=False)
 
 
+def _hours_text(open_time: str | None, close_time: str | None) -> str | None:
+    """把一对时段拼成 "08:00-18:00"，没设就回 None。
+
+    给模型看的紧凑写法。周中/周末/今日三组都走它，模型一眼能看出
+    "今天不开"是今日这一组为空，而不是另外两组的事。
+    """
+    if not open_time or not close_time:
+        return None
+    return f"{open_time}-{close_time}"
+
+
 def build_tools(user_id: int):
     """给这个用户造一套工具。
 
@@ -56,13 +67,20 @@ def build_tools(user_id: int):
             return _tool_failed("search_lab_docs")
 
     @tool
-    def list_open_labs(keywords: str = "") -> str:
-        """查询当前开放中的实验室列表，返回实验室的 id、名称、位置、容量和开放时间。keywords 是实验室名称关键字，可以为空字符串。"""
+    def list_labs(keywords: str = "") -> str:
+        """查询实验室列表，返回 id、名称、位置、容量、是否启用（enabled）、周中/周末/今日的开放时段，以及此刻是否在开放时段内（open_now）。keywords 是实验室名称关键字，可以为空字符串。
+        问"有哪些实验室""现在哪些开着""周末开不开"都用这个。
+        注意 enabled 和 open_now 是两回事：enabled 只是"管理员有没有启用这间实验室"，回答"现在开放吗"必须看 open_now。
+        """
         try:
             keywords = keywords.strip() or None
             with SessionLocal() as db:
+                # 故意不筛 status：这个工具叫 list_labs，就得真的列出全部实验室。
+                # 以前它固定筛 status=1 却叫"开放中的实验室"，于是"管理员启用了"
+                # 被模型当成"此刻开着"——用户晚上 21:39 问到"8 间开放"就是这么来的。
+                # 现在启用与否由返回体里的 enabled 说清楚，不靠筛掉。
                 page = lab_service.get_lab_page_list(
-                    db, page=1, page_size=10, keywords=keywords, status=1
+                    db, page=1, page_size=50, keywords=keywords
                 )
                 rows = [
                     {
@@ -70,15 +88,24 @@ def build_tools(user_id: int):
                         "name": item.name,
                         "location": item.location,
                         "capacity": item.capacity,
-                        "open_time": item.open_time,
-                        "close_time": item.close_time,
+                        "enabled": item.status == 1,
+                        "weekday_hours": _hours_text(item.open_time, item.close_time),
+                        "weekend_hours": _hours_text(
+                            item.weekend_open_time, item.weekend_close_time
+                        ),
+                        # today_* 是后端按"今天星期几"算好的（lab_service.to_lab_response
+                        # 的产物），模型不用自己判星期几，也不该自己判。
+                        "today_hours": _hours_text(
+                            item.today_open_time, item.today_close_time
+                        ),
+                        "open_now": item.open_now,
                     }
                     for item in page.list
                 ]
                 total = page.total
             return json.dumps({"total": total, "labs": rows}, ensure_ascii=False)
         except Exception:
-            return _tool_failed("list_open_labs")
+            return _tool_failed("list_labs")
 
     @tool
     def list_lab_equipments(lab_id: int, keywords: str = "") -> str:
@@ -86,8 +113,8 @@ def build_tools(user_id: int):
         try:
             with SessionLocal() as db:
                 lab = lab_service.get_lab(db, int(lab_id))
-                # 和 list_open_labs（硬编码 status=1）、list_lab_free_slots（get_free_slots
-                # 里有同样的判断）保持一致：已关闭的实验室不列设备。
+                # 和 list_lab_free_slots（get_free_slots 里有同样的判断）保持一致：
+                # 管理员停用的实验室不列设备。
                 # 这个判断只能放在工具层，不能放进 equipment_service.get_equipment_page_list——
                 # 那个函数同时被 HTTP 接口用着，而前端设备页**需要**能查看已关闭实验室的设备清单。
                 # 不加这道判断的话，用户报一个已关闭的 lab_id，模型照样能列出设备、走完确认流程，
@@ -206,12 +233,24 @@ def build_tools(user_id: int):
 
     @tool
     def get_today() -> str:
-        """获取今天的日期，格式为 YYYY-MM-DD。用于把"今天""明天"换算成具体的日期。"""
-        return datetime.now().strftime("%Y-%m-%d")
+        """获取今天的日期、星期几和当前时间。用于把"今天""明天"换算成具体的日期，以及判断此刻实验室开没开。"""
+        # 加上星期几和时间，是因为开放时段分周中/周末两套，光有日期
+        # 模型判不出该用哪套；而"现在开着吗"更是直接卡在几点几分上。
+        now = datetime.now()
+        return json.dumps(
+            {
+                "date": now.strftime("%Y-%m-%d"),
+                "weekday": lab_service.WEEKDAY_NAMES[now.weekday()],
+                # 用 lab_service 的判断，别在这儿另写一份"周六周日算周末"。
+                "is_weekend": now.weekday() in lab_service.WEEKEND_DAYS,
+                "time": now.strftime("%H:%M"),
+            },
+            ensure_ascii=False,
+        )
 
     return [
         search_lab_docs,
-        list_open_labs,
+        list_labs,
         list_lab_equipments,
         list_lab_free_slots,
         create_lab_reservation,
