@@ -7,10 +7,25 @@ from app.schemas.lab import (
     LabUpdateRequest,
     LabCreateRequest,
 )
-from app.services import lab_service
+from app.services import kb_service, lab_service
 from app.database import get_db
 
 router = APIRouter(prefix="/lab", tags=["实验室信息接口"])
+
+
+def _refresh_kb_doc() -> None:
+    """实验室增删改之后，把知识库里的 开放时间.md 按数据库重画一遍。
+
+    只写文件、不 embed：索引的重建落在下一次 AI 检索那一侧（kb_service 按
+    文件指纹判断），所以"保存实验室"这个请求既不依赖向量库能不能用，
+    也不会被 bge 模型在 CPU 上几秒钟的加载卡住。函数内部自己吞异常——
+    实验室的改动已经提交成功了，不该因为文档没跟上就回 500。
+
+    放在路由层而不是 lab_service 里：渲染文档要问 lab_service.resolve_open_hours
+    （"哪天用哪套时段"的唯一判断点），kb_service 已经依赖它了，反过来再依赖
+    就成了环。
+    """
+    kb_service.rebuild_open_hours_doc()
 
 
 @router.get("/list")
@@ -45,6 +60,7 @@ def create_lab(
     db: Session = Depends(get_db),
 ):
     res = lab_service.create_lab(db, data)
+    _refresh_kb_doc()
     return Response.success(data=res)
 
 
@@ -56,6 +72,7 @@ def update_lab(
     db: Session = Depends(get_db),
 ):
     res = lab_service.update_lab(db, lab_id, data)
+    _refresh_kb_doc()
     return Response.success(data=res)
 
 
@@ -66,4 +83,5 @@ def delete_lab(
     db: Session = Depends(get_db),
 ):
     lab_service.delete_lab(db, lab_id)
+    _refresh_kb_doc()
     return Response.success()

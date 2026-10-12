@@ -79,6 +79,7 @@ from app.models.reservation import Reservation  # noqa: E402,F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: E402,F401
 from app.models.user import User  # noqa: E402
 from app.schemas.reservation import ReservationCreateRequest  # noqa: E402
+from app.services import kb_service  # noqa: E402
 from app.utils.password import hash_password  # noqa: E402
 from app.utils.jwt import create_access_token  # noqa: E402
 
@@ -117,6 +118,19 @@ def _reset_rate_limiter():
     limiter.reset()
     yield
     limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_knowledge_base(tmp_path, monkeypatch):
+    """把知识库和向量库目录挪到临时目录。
+
+    管理端增删改实验室会重新生成 data/kb/开放时间.md。不挪的话，用例里的
+    测试数据会把仓库里那份真实文档覆盖掉，git status 里就凭空多出一处改动，
+    而且下次跑测试又变一次。向量库目录一起挪——索引指纹存在那里，跟着走
+    才不会串。
+    """
+    monkeypatch.setattr(kb_service, "KB_DIR", tmp_path / "kb")
+    monkeypatch.setattr(kb_service, "CHROMA_DIR", tmp_path / "chroma")
 
 
 @pytest.fixture
