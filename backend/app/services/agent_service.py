@@ -123,7 +123,19 @@ async def stream_agent(user_id: int, data: ChatRequest):
             inputs, version="v2", config={"recursion_limit": 10}
         ):
             kind = event.get("event")
-            if kind == "on_tool_start":
+            if kind == "on_chat_model_start":
+                # 每次模型调用开始时，把状态刷回「正在思考...」。
+                #
+                # 不加这条，工具跑完之后状态会一直停在上一条「XX完成」——而模型
+                # 这时候正在写答案，实测这一段能到 20 秒以上。界面上写着「已完成」
+                # 却半天不动，比什么都不显示更容易被当成卡死。
+                #
+                # 前端只在「没有工具正在跑」时才显示这条状态，所以工具执行期间
+                # 不会和时间线里那句「正在查询...」重复。
+                metadata = event.get("metadata") or {}
+                if metadata.get("langgraph_node") in (None, "agent"):
+                    yield {"type": "status", "message": "正在思考..."}
+            elif kind == "on_tool_start":
                 name = event.get("name") or ""
                 yield {
                     "type": "tool_start",
@@ -178,6 +190,33 @@ def build_agent(user_id: int):
         # 这段的前提是 LLM_BASE_URL 指的是 DeepSeek 兼容接口。换成标准
         # OpenAI 的模型时，把 extra_body 换回 max_tokens= 即可。
         extra_body={"max_tokens": 1024},
+        # 超时和重试次数必须显式给。这两项"不设"的后果不一样，而且都不好：
+        #
+        # timeout 不设 ≠ 走 SDK 那 600 秒的默认值。langchain 的 request_timeout
+        # 默认就是 None，它会把这个 None 原样递给 openai 客户端；客户端一看
+        # "调用方明确给了值"，就跳过了自己的 DEFAULT_TIMEOUT 兜底。实测：
+        #     ChatOpenAI(...).root_async_client.timeout  ->  None
+        # 也就是说**根本没有超时**——连接真挂住的话它会一直等下去，不报错也不返回。
+        # 这里写死 30 秒，等于把这个洞补上。
+        #
+        # max_retries 不设则相反：langchain 自己默认 None、不转发，于是 SDK 那层
+        # 的 DEFAULT_MAX_RETRIES = 2 生效。实测 root_async_client.max_retries -> 2。
+        #
+        # 实测这个网关会偶发「卡 20 秒左右，然后一个字节都不回就把连接掐掉」，
+        # 底层报的是 RemoteProtocolError: Server disconnected without sending
+        # a response。用默认值时，一次 20 秒的故障会被 2 次重试放大成等 80 多秒
+        # 才弹「大模型调用失败」；用户感知就是「小田反应极慢，最后还报错」。
+        #
+        # 30 秒管的是「多久收不到任何字节就放弃」：正常首字节只要 0.4~0.6 秒，
+        # 实测最慢的一次成功响应是 24 秒，所以 30 秒不会误杀正常回答。
+        # 留 1 次重试是为了兜偶发断流；再往上加只会让失败时等得更久。
+        # （注：timeout 是 request_timeout 的别名，两种写法等价。）
+        #
+        # 另：langchain 在流式这条路上还自带一层 stream_chunk_timeout（实测默认
+        # 120.0），管的是"相邻两个分片之间隔多久算断"。那是另一层护栏，不是请求
+        # 超时——别把它当成"原来其实有兜底"的依据。
+        timeout=30.0,
+        max_retries=1,
     ).bind_tools(tools)
 
     async def agent_node(state: MessagesState):
