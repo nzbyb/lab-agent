@@ -1,0 +1,37 @@
+# ============================================================
+# 构建前端镜像时要挡在外面的东西
+# ============================================================
+
+# 本机的 node_modules 是 Windows 装的，里面是 .node 原生二进制，
+# 拷进 Linux 容器用不了，而且体积几百 MB，光传构建上下文就要半天。
+# 镜像里会 npm ci 自己装一份。
+node_modules/
+
+# 本机构建产物。镜像里会重新 npm run build，带过去只会让人误会
+# "用的到底是哪一份"。
+dist/
+dist-ssr/
+.vite/
+*.local
+
+# 日志与缓存
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+*.tsbuildinfo
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ⚠️ 刻意**不**排除 .env.development。
+# 它里面是 VITE_API_BASE_URL=http://127.0.0.1:8000，看着像该挡，
+# 但 vite build 走的是 production 模式，只加载 .env 和 .env.production，
+# 根本不读 .env.development —— 带上它是无害的，反而能让构建和本机一致。
+# 真正要保证的是：**没有 .env.production**，这样生产构建里
+# VITE_API_BASE_URL 是空串，request.js 的 `|| ''` 兜底成相对路径，
+# 再交给 nginx 反代。哪天有人加了 .env.production，这套反代就废了。

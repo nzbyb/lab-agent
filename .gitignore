@@ -48,6 +48,10 @@ lerna-debug.log*
 backend/uploads/
 backend/data/chroma/
 
+# docker compose 默认把 embedding 模型缓存在这里（见 docker-compose.yml 的
+# HF_CACHE_DIR）。第一次跑会下 92MB 进来，不该进仓库。
+.hf-cache/
+
 # ---------- 临时文件 ----------
 # 下面两行和 .tmp_* 是三种不同的写法，缺一不可：排查问题时随手建的脚本
 # 用的是下划线开头（_tmp_xxx/、_probe_xxx.py），只有点开头那条的话它们

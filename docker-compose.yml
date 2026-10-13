@@ -1,0 +1,134 @@
+# ============================================================
+# 智能实验室预约系统 —— 三件套一键起：MySQL + 后端 + 前端
+#
+# 起之前先做两件事：
+#   1) cp .env.example .env   然后把里面的值填上
+#      （.env 已被 .gitignore 忽略，绝不会进仓库）
+#   2) 确认 Docker Desktop 在跑
+#
+# 然后：
+#   docker compose up -d --build      构建并后台启动
+#   docker compose ps                 看三个容器的状态
+#   docker compose logs -f backend    跟后端日志
+#   浏览器开 http://localhost:8080
+#
+# 停：
+#   docker compose down               停掉（数据留在卷里，下次还在）
+#   docker compose down -v            连数据一起清掉，回到全新状态
+#
+# ------------------------------------------------------------
+# 起来之后库是空的——建表是后端启动时自动做的，但没有数据。
+# 想灌演示数据，在第一次 up 之后跑：
+#
+#   docker compose exec -T mysql sh -c \
+#     'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 lab_agent' \
+#     < backend/demo_data.sql
+#
+# 注意 demo_data.sql 只插实验室和设备，**不建任何用户**（刻意的，
+# 免得仓库里出现默认账号密码）。账号要通过前端注册页自己注册一个。
+# ============================================================
+
+name: lab-agent
+
+services:
+  # ------------------------------------------------------------
+  # 数据库
+  # ------------------------------------------------------------
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      # :? 的意思是"没设就直接报错退出"，别让它偷偷用个默认空密码起来。
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?根目录 .env 里没填 MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: lab_agent
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      # 必须显式指定。MySQL 镜像默认字符集是 latin1，中文存进去会变成问号，
+      # 而且是写入那一刻才炸、报错还不知所云。
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    ports:
+      # 只绑 127.0.0.1（外网连不进来），且用宿主机的 3307 而不是 3306
+      # —— 3306 要留给本机自己的 MySQL，抢了的话你本机那份就跑不起来了。
+      # 想用 Navicat 之类连进来看数据，就连 127.0.0.1:3307。
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # 后端必须等数据库真的能连了再起，否则第一次跑必定崩在"连不上数据库"。
+      # 光看容器"Up"没用 —— MySQL 第一次启动要初始化数据目录，几十秒才能用。
+      # 用 CMD-SHELL 加 $$ 是为了让容器里的 shell 去展开 $MYSQL_ROOT_PASSWORD，
+      # 而不是在 docker compose 这一层就被替换掉（那样密码含特殊字符就会出错）。
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # ------------------------------------------------------------
+  # 后端
+  # ------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        # 等到 healthcheck 通过才启动，不是"容器起来了"就算
+        condition: service_healthy
+    environment:
+      # 容器之间用**服务名**互找，所以主机名写 mysql，不是 127.0.0.1
+      # —— 容器里的 127.0.0.1 指的是后端容器自己，那儿没有数据库。
+      DATABASE_URL: mysql+pymysql://root:${MYSQL_ROOT_PASSWORD}@mysql:3306/lab_agent?charset=utf8mb4
+
+      # 密钥一律从根目录 .env 注入环境变量，**不写进镜像**
+      # （镜像层会被永久保存，推上去等于公开密钥）。
+      # 后端 config.py 里有启动自检：长度不足 32 位、或用 .env.example 里的
+      # 示例值，会直接拒绝启动 —— 所以照抄 .env.example 是起不来的，必须自己生成一个。
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?根目录 .env 里没填 JWT_SECRET_KEY}
+      JWT_EXPIRE_HOURS: ${JWT_EXPIRE_HOURS:-24}
+
+      LLM_API_KEY: ${LLM_API_KEY:?根目录 .env 里没填 LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL:?根目录 .env 里没填 LLM_MODEL}
+      LLM_BASE_URL: ${LLM_BASE_URL:?根目录 .env 里没填 LLM_BASE_URL}
+
+      # 前后端同源（都在 8080，nginx 反代），浏览器不发跨域请求，
+      # 所以这里留空完全没问题。开发时本机 npm run dev 才需要它。
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+
+      # 必须和后端 Dockerfile 里那个 ARG TZ 一致，否则改了这边不生效
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      # 用户上传的文件属于运行时数据，容器重建不该丢
+      - uploads:/app/uploads
+      # embedding 模型缓存。第一次启动会去 HuggingFace 下 BAAI/bge-small-zh-v1.5
+      # （约 92MB），之后就一直用这份，不再联网。
+      # 默认落在仓库根的 ./.hf-cache/（已被 .gitignore 忽略）。
+      # 如果你本机已经下过这个模型，在 .env 里写
+      #   HF_CACHE_DIR=C:/Users/你的用户名/.cache/huggingface
+      # 指过去，就能省掉那一次下载。
+      # 注意这个挂载是**必须**的：不挂的话每次都从头下，而且断网就起不来。
+      - ${HF_CACHE_DIR:-./.hf-cache}:/root/.cache/huggingface
+    ports:
+      # 只在宿主机开 8001 用来排查（curl 直连后端看原始响应）。
+      # 特意避开 8000 —— 那是本机 uvicorn 开发服务占的口。
+      # 正常访问走 8080，由 nginx 转进来，不需要这个口。
+      - "127.0.0.1:8001:8000"
+
+  # ------------------------------------------------------------
+  # 前端（nginx：发静态文件 + 反代 /api 和 /uploads 给后端）
+  # ------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # 用 8080 不用 80，免得跟本机别的东西撞。开 http://localhost:8080
+      - "8080:80"
+
+volumes:
+  # 具名卷，docker compose down 不会删（down -v 才删）
+  mysql-data:
+  uploads:
