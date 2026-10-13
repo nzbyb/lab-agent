@@ -6,7 +6,7 @@
 
 学生预约实验室、借用设备，管理员维护基础数据、审核预约。站内带一个 AI 助手（叫「小田」），它能真的去查空闲时段、查设备、替用户下单，而不是只会闲聊。
 
-**仓库里没有任何演示账号和密码。** 想跑起来请自己注册一个。
+**仓库里没有任何演示账号和密码。** 想跑起来请自己注册一个——`scripts/init-demo.sh` 会引导你注册，密码当场由你输入，不进仓库。
 
 ---
 
@@ -42,9 +42,61 @@
 
 ## 跑起来
 
-需要 Python 3.11（开发时用的 3.11.9，仓库里没有声明最低版本）、Node 22.18+ 或 24.12+（见 `frontend/package.json` 的 `engines`）、MySQL（开发时用的 9.7.2，仓库里同样没有固定版本）。
+两条路。**只想看看界面长什么样**走第一条，本机不用装 Python、Node、MySQL。**要改代码**走后面，本机跑开发服务，有热重载和断点。
+
+### 用 Docker 起全套
+
+```bash
+copy .env.example .env          # macOS / Linux: cp .env.example .env
+```
+
+打开刚生成的根目录 `.env`，把这五个填上：
+
+| 变量 | 填什么 |
+| --- | --- |
+| `MYSQL_ROOT_PASSWORD` | 随便定一个，只给这个容器用 |
+| `JWT_SECRET_KEY` | `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
+| `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | 任何 OpenAI 兼容接口，要有 `/chat/completions` |
+
+`TZ`、`CORS_ORIGINS`、`JWT_EXPIRE_HOURS` 都有默认值，不用动。这五个少一个，`docker compose up` 会**直接报错退出**，不会拿空值硬起——`JWT_SECRET_KEY` 照抄 `.env.example` 里的示例值也一样起不来（后端的启动自检会拒绝）。
+
+```bash
+docker compose up -d
+```
+
+第一次要下基础镜像和一批 Python 依赖。装完 `site-packages` 是 1.8G，其中 CPU 版 torch 自己就占 773M，后端镜像最终 2.6G，慢是正常的。（torch 要是不单独装 CPU 版，pip 会把 CUDA 版一起拽下来，再白多两个多 G。）
+
+> 起来之后是**空库**：表由后端启动时自动建，但一条数据都没有。界面能开，登录不进去。
+
+灌演示数据、顺手注册一个账号：
+
+```bash
+bash scripts/init-demo.sh --username 你的账号名 --admin
+```
+
+> ⚠️ Windows 上请在 **Git Bash** 里跑这条命令。PowerShell 里的 `bash` 不是 Git Bash（是 WSL 的壳）。
+
+它会问密码（输入不回显，也不留在 shell 历史里），然后灌 8 间实验室 + 32 台设备、注册这个账号、把它提成管理员、再造 30 条演示预约，最后以四张表的行数收尾。
+
+账号密码**必须由你自己传**：仓库是公开的，脚本里带任何默认凭据都等于公开一份。想用中文账号名就直接在 http://localhost:8080/register 上注册（脚本只放行字母数字下划线点减号——它要把这个名字拼进 SQL）。
+
+打开 **http://localhost:8080** 登录。
+
+#### 几个需要知道的
+
+- **端口**：`8080` 前端（所有网卡都能连）；`8001` 后端直连，只绑 `127.0.0.1`，用来 `curl` 看原始响应；`3307` MySQL，只绑 `127.0.0.1`，Navicat 连这个（3306 留给本机自己的 MySQL）。
+- **前端容器里的 nginx 自己反代** `/api` 和 `/uploads`，浏览器这边是同源的，所以 `CORS_ORIGINS` 留空是对的。
+- **数据在卷里**：`mysql-data`（数据库）和 `uploads`（用户上传的文件）。`docker compose down` 不丢，`down -v` 才清空。
+- **知识库索引没挂卷**，容器重建就会重做一遍。第一次要下 92MB 的 embedding 模型，缓存在仓库根的 `./.hf-cache/`（这个目录会保留，不会重复下）。
+- **改了代码要重新构建**：`docker compose up -d --build`。跟日志：`docker compose logs -f backend`。
+- **后端是单进程跑的**（没开 `--workers`）：限流计数器、知识库重建锁都在进程内存里，多开就各算各的。
+- **容器用哪个时区由 `TZ` 决定**，默认 `Asia/Shanghai`。填错的话 AI 答"现在有哪些实验室开放"会整体偏八小时，界面上还看不出来。
+
+想在本机改代码，接着往下看。
 
 ### 后端
+
+需要 Python 3.11（开发时用的 3.11.9，仓库里没有声明最低版本）、Node 22.18+ 或 24.12+（见 `frontend/package.json` 的 `engines`）、MySQL（开发时用的 9.7.2，仓库里同样没有固定版本）。
 
 ```bash
 cd backend
@@ -115,6 +167,7 @@ npm run dev            # http://localhost:5173
 打包：`npm run build`，产物在 `frontend/dist`。
 
 > 部署建议让前后端同域：nginx 把 `/api` 反代给后端，静态文件交给 `frontend/dist`。这样浏览器不发跨域请求，`CORS_ORIGINS` 只在前后端分开跑时才有用。
+> 这套方案已经落在 `frontend/nginx.conf` 里了（Docker 起前端用的就是它），手动部署可以照抄。
 > （顺带一提，也可以让 FastAPI 直接挂载 `dist`，但现在的 `main.py` 只挂载了 `/uploads`，还没做这件事。）
 
 ---
@@ -136,6 +189,8 @@ CREATE DATABASE lab_agent_test DEFAULT CHARSET utf8mb4;
 
 前端只做构建验证：`cd frontend && npx vite build`。
 
+CI（GitHub Actions）跑的就是上面这两件事，前后端各一个 job。后端那个用真的 MySQL 服务容器而不是 SQLite——这套代码用到行锁（`test_concurrency` 那组用例），SQLite 没有，测出来的绿是假的；跑完会把 pytest 的最后一行汇总写进 job 摘要（`$GITHUB_STEP_SUMMARY`）。前端那个跑 `npm ci` + `npm run build`。
+
 ## 目录结构
 
 ```
@@ -151,13 +206,19 @@ backend/
   tests/           228 条用例
   demo_data.sql    实验室 / 设备基础数据
   scripts/         演示预约数据生成
+  Dockerfile
 frontend/
   src/
     views/         15 个页面
     api/           按后端模块分的请求封装
     components/    BaseChart 等复用组件
     stores/        Pinia
+  Dockerfile       node 构建 → nginx 托管
+  nginx.conf       静态文件 + 反代 /api、/uploads
+scripts/
+  init-demo.sh     一键初始化：灌数据 + 注册账号 + 造演示预约
 docs/              图标和界面截图
+docker-compose.yml MySQL + 后端 + 前端
 ```
 
 ---
@@ -190,7 +251,7 @@ docs/              图标和界面截图
 - **没有迁移框架。** `create_all` 只建缺少的表，给已有表加列不生效，得手工改。
 - **关掉标签页后，这一轮回答会停在那里。** 内容不会丢（`finally` 里落了库），但后端不会接着写完，重新打开看到的是半截。已计划改成后台任务继续生成。
 - **对话历史每人最多留 50 个会话**（按会话裁，不是按消息条数），超了删最旧的。
-- 没有 CI、没有 Docker、没有 pre-commit 钩子。
+- 没有 pre-commit 钩子。（CI 和 Docker 都补上了：前者是 GitHub Actions 跑前后端各一个 job，后者见上面「跑起来」。）
 
 ## 界面
 

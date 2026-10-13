@@ -18,14 +18,17 @@
 #
 # ------------------------------------------------------------
 # 起来之后库是空的——建表是后端启动时自动做的，但没有数据。
-# 想灌演示数据，在第一次 up 之后跑：
+# 想灌演示数据 + 注册一个账号，在第一次 up 之后跑：
+#
+#   bash scripts/init-demo.sh --username <账号名> --admin
+#
+# 注意 demo_data.sql 和 seed_demo_data.py 都只碰数据、**不建任何用户**（刻意的，
+# 免得仓库里出现默认账号密码），所以账号名和密码必须由使用者传进脚本。
+# 只想灌实验室和设备的话，也可以直接执行 backend/demo_data.sql：
 #
 #   docker compose exec -T mysql sh -c \
 #     'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 lab_agent' \
 #     < backend/demo_data.sql
-#
-# 注意 demo_data.sql 只插实验室和设备，**不建任何用户**（刻意的，
-# 免得仓库里出现默认账号密码）。账号要通过前端注册页自己注册一个。
 # ============================================================
 
 name: lab-agent
