@@ -1,0 +1,116 @@
+name: CI
+
+# 推任何分支都跑一遍，开 PR 也跑。公开仓库上会显示绿勾/红叉，
+# 所以先在 p2-frontend 试绿了再考虑合 main。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# 同一分支连着推几次时，把前一次还没跑完的掐掉。
+# 不掐的话一次手滑推三下就是三个红叉挂在那儿（而且白等几分钟）。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 后端：起一个真 MySQL，跑真测试。
+  # 不用 SQLite 替身——这套代码用到行锁（test_concurrency 那组用例），
+  # SQLite 压根没有，测出来的绿是假的。
+  # ---------------------------------------------------------------------------
+  backend:
+    name: 后端测试
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          # 服务容器只会建这一个库。测试真正用的 lab_agent_test 在下面单独建，
+          # 因为 conftest 是把 .env 里的库名就地改成 lab_agent_test，不是读它。
+          MYSQL_DATABASE: lab_agent
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # 跟开发机上的 .venv 一致
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      # 先单装 CPU 版 torch。不装的话，下面 requirements 里的
+      # sentence-transformers 会把 CUDA 版 torch 一起拽下来（两个多 G），
+      # 而这套测试一条都不用 GPU——白等好几分钟。
+      # 注意：测试全程不加载 embedding 模型（KB 那组用例用的是假集合），
+      # 所以这里也不需要预下 bge 模型。
+      - name: 装 CPU 版 torch
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: 装依赖
+        run: pip install -r backend/requirements.txt
+
+      # 这两个没写进 requirements.txt，但测试要：httpx 是 FastAPI 的
+      # TestClient 的依赖，pytest 是跑测试本身。版本钉成跟开发机一致。
+      - name: 装测试用的包
+        run: pip install pytest==9.1.1 httpx==0.28.1
+
+      - name: 建测试库
+        run: |
+          mysql -h 127.0.0.1 -uroot -proot -e \
+            "CREATE DATABASE IF NOT EXISTS lab_agent_test CHARACTER SET utf8mb4;"
+
+      # conftest 强制要求 backend/.env 存在且有 DATABASE_URL，否则直接报错退出。
+      # 这里现造一份 CI 专用的：全是假值，跟真 key 无关。
+      # 真 .env 被 .gitignore 挡住，永远不进仓库，也不进 CI。
+      - name: 造一份 CI 专用的 .env
+        run: |
+          cat > backend/.env <<'ENVEOF'
+          DATABASE_URL=mysql+pymysql://root:root@127.0.0.1:3306/lab_agent
+          JWT_SECRET_KEY=ci-throwaway-secret-not-used-anywhere-real-0123456789
+          JWT_EXPIRE_HOURS=24
+          LLM_API_KEY=sk-ci-placeholder-not-a-real-key
+          LLM_MODEL=gpt-4o-mini
+          LLM_BASE_URL=https://api.openai.com/v1
+          ENVEOF
+
+      - name: 跑测试
+        working-directory: backend
+        run: pytest tests
+
+  # ---------------------------------------------------------------------------
+  # 前端：确认能构建出来。
+  # 刻意不加 prettier --check：仓库里那批文件本来就过不了（早先是 CRLF 换行），
+  # 加了等于永远红，没有意义。
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: 前端构建
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'   # 跟开发机上的 node 24 一致；package.json 的 engines 也要求 >=24.12
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 装依赖
+        run: npm ci
+
+      - name: 构建
+        run: npm run build
