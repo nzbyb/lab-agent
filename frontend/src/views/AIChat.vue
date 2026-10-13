@@ -177,7 +177,7 @@
           v-for="conv in historyList"
           :key="conv.id"
           class="history-item"
-          :class="{ 'is-active': conv.id === conversationId }"
+          :class="{ 'is-active': conv.session_key === sessionKey }"
         >
           <div class="history-main" @click="pickConversation(conv)">
             <div class="history-title">{{ conv.title || '未命名对话' }}</div>
@@ -185,13 +185,19 @@
           </div>
           <!-- 正在生成回答时，当前这条会话的删除按钮要禁掉：SSE 回调还在往这轮
                对话上追加内容，删掉它这轮回复就静默丢了（见 removeConversation）。
-               别的会话不受影响，照常能删。 -->
+               别的会话不受影响，照常能删。
+
+               认「当前这条」必须用 session_key，不能用 conversationId：后者要等
+               回复全部吐完、后端经 done 事件回传才知道，所以**每个新会话的第一条
+               消息，整个生成过程里它都是 null**，拿它比对等于这道锁对新会话完全
+               失效（上面 is-active 同理）。session_key 是开新会话时本地生成的，
+               从第一秒起就对得上。 -->
           <el-button
             link
             type="danger"
             :icon="Delete"
             title="删除这条对话"
-            :disabled="loading && conv.id === conversationId"
+            :disabled="loading && conv.session_key === sessionKey"
             @click.stop="removeConversation(conv)"
           />
         </div>
@@ -221,6 +227,7 @@ import {
   Promotion
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { AI_LAST_CONVERSATION_PREFIX } from '@/utils/auth'
 
 // 不要解构：const { userInfo } = useUserStore() 会丢掉响应性
 const userStore = useUserStore()
@@ -267,7 +274,8 @@ const newSessionKey = () => {
 
 // 本地只记「上次聊的是哪条会话」。**按用户 id 分开存**：不分的话换个账号
 // 登录会读到上一个人的会话，直接看到别人的聊天记录。
-const storageKey = () => `ai_last_conversation:${userStore.userInfo?.id ?? 'unknown'}`
+// 前缀定义在 utils/auth.js —— 登出时要按它把这条记录一起清掉。
+const storageKey = () => `${AI_LAST_CONVERSATION_PREFIX}${userStore.userInfo?.id ?? 'unknown'}`
 
 const readSaved = () => {
   try {
@@ -429,11 +437,25 @@ const toMessageItem = (row) => ({
 // 把一条会话读回来接着聊。conv 要同时带 id 和 session_key——
 // session_key 是继续对话时要发回后端的，只有列表接口会给。
 const loadConversation = async (conv, { silent = false } = {}) => {
+  // 拉取期间用户可能已经动过界面了：发了新的一句、点了「新对话」、或切去了别的会话。
+  // 这不是理论——进页面时的那次恢复请求并不锁输入框（见 onMounted 的说明），慢网下
+  // 用户完全来得及先发一句。这时若还照原样把整屏换成「库里的历史」，他刚发的那句
+  // 和正在往外吐的回复会一起从界面上消失（数据在库里，丢的是这一屏）。
+  //
+  // 记两个"动过没有"的凭据：
+  //   换了 session_key → 换会话了（点了新对话，或切去了另一条）
+  //   消息条数变了     → 新一轮已经开始（handleSend 一上来就 push 两条）
+  // 任一不等就放弃这次替换。正常情况下两者都不会变，行为跟以前完全一样。
+  const beforeKey = sessionKey.value
+  const beforeCount = messages.value.length
   try {
     const res = await getConversationMessagesApi(conv.id)
     // 后端对「查不到 / 不是自己的」给的是 200 + data:null，不是报错
     if (res.code !== 200 || !res.data?.length) {
       if (!silent) ElMessage.warning('这条对话已经不在了')
+      return false
+    }
+    if (sessionKey.value !== beforeKey || messages.value.length !== beforeCount) {
       return false
     }
     messages.value = [{ ...WELCOME_MESSAGE }, ...res.data.map(toMessageItem)]
@@ -472,7 +494,10 @@ const pickConversation = async (conv) => {
     ElMessage.warning('正在生成回答，请稍候')
     return
   }
-  if (conv.id === conversationId.value) {
+  // 「点的是不是当前这条」也统一用 session_key 认（理由同模板里删除按钮那段）：
+  // 按 conversationId 认的话，首条消息出过错、没等到 done 的那种会话会被当成
+  // 「不是当前这条」而多跑一次拉取。
+  if (conv.session_key === sessionKey.value) {
     historyOpen.value = false
     return
   }
@@ -486,7 +511,8 @@ const removeConversation = async (conv) => {
   // 用户看到的是屏幕上一段活着的问答，其实库里整条会话都没了，一刷新全消失。
   // 别的会话没有流挂在上面，删了没事。
   // 按钮那边也置了 disabled，这里再拦一道（和 newChat 一个写法）。
-  if (loading.value && conv.id === conversationId.value) {
+  // 认「当前这条」同样用 session_key，理由见模板里删除按钮那段注释。
+  if (loading.value && conv.session_key === sessionKey.value) {
     ElMessage.warning('正在生成回答，请稍候')
     return
   }
@@ -505,8 +531,10 @@ const removeConversation = async (conv) => {
     if (res.code !== 200) return // 失败原因由拦截器提示
     ElMessage.success('已删除')
     historyList.value = historyList.value.filter((item) => item.id !== conv.id)
-    // 删掉的正是当前这条，就退回一条新会话，别停在一个已经不存在的会话上
-    if (conv.id === conversationId.value && !loading.value) startNewSession()
+    // 删掉的正是当前这条，就退回一条新会话，别停在一个已经不存在的会话上。
+    // 也改用 session_key 认：首条消息要是没等到 done 就出错或断线，conversationId
+    // 会一直是 null，按旧写法这里不会重置，界面就停在一条已经从库里删掉的会话上。
+    if (conv.session_key === sessionKey.value && !loading.value) startNewSession()
   } catch {
     // 拦截器已提示
   }
@@ -522,6 +550,7 @@ onMounted(async () => {
   }
   // silent：恢复失败是正常情况（会话可能已被保留上限删掉，或在别的标签页里删了），
   // 弹提示会变成"用户什么都没干就看到报错"
+  const restoringKey = sessionKey.value
   const ok = await loadConversation(
     { id: conversationId.value, session_key: sessionKey.value },
     { silent: true }
@@ -533,7 +562,11 @@ onMounted(async () => {
   // 恢复请求还没回来就发送，慢网/局域网下是真会发生的。
   // 跳过重置不会留下坏状态：这轮结束时后端会把新建会话的 id 经 done 事件送回来，
   // conversationId 自己就修正了（session_key 一直是同一个，配得上）。
-  if (!ok && !loading.value) startNewSession()
+  //
+  // ok=false 现在有两个来源：这条会话是真没了，或者拉取期间用户自己动过界面
+  // （上面 loadConversation 因此放弃了替换）。后一种绝不能再重置一次——那正好
+  // 把他刚做的事冲掉。用 session_key 有没有变来分辨这两种。
+  if (!ok && !loading.value && sessionKey.value === restoringKey) startNewSession()
 })
 
 // 切页面时把秒数定时器停掉。不停的话它会一直往上走，回到本页时
