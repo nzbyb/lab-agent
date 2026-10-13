@@ -83,9 +83,35 @@ jobs:
           LLM_BASE_URL=https://api.openai.com/v1
           ENVEOF
 
+      # set -o pipefail 是必须的，不是保险起见：不加的话 `pytest | tee` 的退出码
+      # 取的是 tee 的（永远是 0），测试红了 CI 也是绿的。这是最坏的一种错——假绿。
       - name: 跑测试
         working-directory: backend
-        run: pytest tests
+        run: |
+          set -o pipefail
+          pytest tests 2>&1 | tee pytest-output.txt
+
+      # 把汇总行（"228 passed in 45.23s"）写进 GitHub 的步骤摘要。
+      # 用处有二：一是 PR 页面上直接看得到条数，二是它会进 check run 的
+      # output.summary 字段，那个匿名 API 就能读到——本机没装 gh、也拿不到
+      # job 日志，这条路是唯一能自动看到数字的口子。
+      # if: always() 是为了测试红的时候也能看到红在哪，别只报个失败就完事。
+      - name: 把测试结果写进步骤摘要
+        if: always()
+        working-directory: backend
+        run: |
+          if [ -f pytest-output.txt ]; then
+            line=$(awk 'NF{last=$0} END{print last}' pytest-output.txt)
+          else
+            line="（测试没跑起来，没有输出）"
+          fi
+          {
+            echo '### 后端测试'
+            echo ''
+            echo '```'
+            echo "$line"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ---------------------------------------------------------------------------
   # 前端：确认能构建出来。
