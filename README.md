@@ -187,9 +187,21 @@ CREATE DATABASE lab_agent_test DEFAULT CHARSET utf8mb4;
 
 `conftest.py` 会把 `.env` 里的库名强行改成 `lab_agent_test`，所以不用你去配。它有两道保险丝，防的是「测试把开发库清了」这件事：一道查改完之后的库名，另一道**直接查 `engine` 真正连上的库**——上一次出事故就是因为某个 pytest 插件在 `conftest` 之前就 import 了 `app`，导致环境变量覆盖没生效，改动被静默吞掉。所以第二道才是真正兜住的那道。
 
-前端只做构建验证：`cd frontend && npx vite build`。
+前端跑 vitest（不需要起后端、不需要数据库）：
 
-CI（GitHub Actions）跑的就是上面这两件事，前后端各一个 job。后端那个用真的 MySQL 服务容器而不是 SQLite——这套代码用到行锁（`test_concurrency` 那组用例），SQLite 没有，测出来的绿是假的；跑完会把 pytest 的最后一行汇总写进 job 摘要（`$GITHUB_STEP_SUMMARY`）。前端那个跑 `npm ci` + `npm run build`。
+```bash
+cd frontend
+npm test          # vitest run，跑完就退出
+npm run test:watch   # 开发时盯着改
+```
+
+覆盖 `src/utils/auth.js`、`src/utils/request.js`、`src/stores/user.js` 三个模块——都是纯逻辑，用 `happy-dom` 提供的 `localStorage` 就够，不渲染任何组件、不加载 Element Plus，所以跑一遍不到 1 秒。重点守的是三处真实踩过的坑：登出必须同时清掉内存里的用户信息（只清 localStorage 的话侧边栏要刷新才消失）、401 只弹一条提示、`saveLoginData` 不能漏掉 `setToken`。
+
+另外还有构建验证：`cd frontend && npx vite build`。
+
+CI（GitHub Actions）跑的就是上面这些，前后端各一个 job。后端那个用真的 MySQL 服务容器而不是 SQLite——这套代码用到行锁（`test_concurrency` 那组用例），SQLite 没有，测出来的绿是假的；跑完会把 pytest 的最后一行汇总写进 job 摘要（`$GITHUB_STEP_SUMMARY`）。前端那个跑 `npm ci` + `npm test` + `npm run build`。
+
+> 前端测试用**变异检验**证明过有效：把上面那三处逻辑逐一改坏（logout 不清内存、前缀判据换成 `includes`、`isAdmin` 写成「非 student 即管理员」、漏掉 `setToken`、401 只清 localStorage、401 弹两条 toast），六个变体全部被对应用例抓红。跑通不算数，**改坏了会红**才算数。
 
 ## 目录结构
 
@@ -214,6 +226,8 @@ frontend/
     api/           按后端模块分的请求封装
     components/    BaseChart 等复用组件
     stores/        Pinia
+    utils/         请求封装、登录态读写（旁边的 __tests__/ 是 vitest 用例）
+  vitest.config.js 前端测试配置
   Dockerfile       node 构建 → nginx 托管
   nginx.conf       静态文件 + 反代 /api、/uploads
 scripts/
