@@ -33,7 +33,7 @@
 | --- | --- |
 | 前端 | Vue 3（`<script setup>`）、Vite、Pinia、Vue Router、Element Plus、ECharts、axios、marked + DOMPurify |
 | 后端 | FastAPI、SQLAlchemy 2.0、Pydantic v2、PyMySQL |
-| 数据库 | MySQL（建表靠 `Base.metadata.create_all`，没有迁移框架）。实验室开放时间分周中、周末两档，同一天用哪档由 `lab_service.resolve_open_hours` 一处判定 |
+| 数据库 | MySQL；表结构由 Alembic 管（迁移在 `backend/migrations/`，服务启动时自动升到最新）。实验室开放时间分周中、周末两档，同一天用哪档由 `lab_service.resolve_open_hours` 一处判定 |
 | 鉴权 | JWT（PyJWT）+ bcrypt |
 | AI | LangGraph 编排工具调用、langchain-openai / langchain-core、ChromaDB + sentence-transformers + `BAAI/bge-small-zh-v1.5` 做本地向量检索 |
 | 限流 | slowapi |
@@ -203,6 +203,7 @@ backend/
     schemas/       Pydantic 出入参
     common/        统一响应体和异常处理
     dependencies/  登录态、管理员校验
+  migrations/      Alembic 迁移，表结构的每一次变更都落在这里
   tests/           228 条用例
   demo_data.sql    实验室 / 设备基础数据
   scripts/         演示预约数据生成
@@ -248,7 +249,7 @@ docker-compose.yml MySQL + 后端 + 前端
 ## 已知限制
 
 - **限流是内存计数器，只在单进程下准。** uvicorn 开多 worker 时每个进程各算各的，实际额度翻倍；要精确得换 Redis。
-- **没有迁移框架。** `create_all` 只建缺少的表，给已有表加列不生效，得手工改。
+- **迁移在服务启动时执行，假设单进程。** uvicorn 开多 worker 时每个进程都会跑一遍，并发 DDL 会撞车；要让多 worker 同时启动，得把 `run_migrations()` 从 lifespan 挪到部署流程里单独执行，或者用 MySQL 的 `GET_LOCK` 包一层（`reservation_service` 里已有现成用法）。
 - **关掉标签页后，这一轮回答会停在那里。** 内容不会丢（`finally` 里落了库），但后端不会接着写完，重新打开看到的是半截。已计划改成后台任务继续生成。
 - **对话历史每人最多留 50 个会话**（按会话裁，不是按消息条数），超了删最旧的。
 - 没有 pre-commit 钩子。（CI 和 Docker 都补上了：前者是 GitHub Actions 跑前后端各一个 job，后者见上面「跑起来」。）

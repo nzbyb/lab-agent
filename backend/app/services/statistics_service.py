@@ -111,8 +111,9 @@ def _get_lab_ranking(db: Session, scope_query) -> list[LabRankItem]:
 def get_overview(db: Session, current_user: User) -> StatisticsOverviewResponse:
     """首页统计概览。
 
-    所有指标都从现有 4 张表现算，**不需要新表、新列**——这点很重要，项目没有迁移框架，
-    建表只靠启动时的 Base.metadata.create_all（它只建缺失的表，给已有表加列不会生效）。
+    所有指标都从现有 4 张表现算，**不需要新表、新列**——这点很重要：
+    表结构由 Alembic 管（见 app/database.py 的 run_migrations），加一列就得配一条迁移，
+    不是改完模型就完事。能不加列就不加。
     """
     scope_query = _reservation_scope(db, current_user)
 
