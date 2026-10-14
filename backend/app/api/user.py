@@ -6,7 +6,7 @@ from app.dependencies.auth import get_current_user, get_current_admin
 from app.schemas.user import UserUpdateRequest, UserCreateRequest
 from app.services import user_service
 from app.database import get_db
-from app.schemas.user import PasswordUpdateRequest
+from app.schemas.user import AdminPasswordResetRequest, PasswordUpdateRequest
 
 router = APIRouter(prefix="/user", tags=["用户信息接口"])
 
@@ -78,3 +78,20 @@ def create_user(
 ):
     res = user_service.delete_user(db, user_id, current_user)
     return Response.success()
+
+
+# 路径里有 /{user_id}/password，比 /{user_id} 多一段，两者不会互相截胡，
+# 所以这条不像上面 /password 那样非得抢在 /{user_id} 前面声明。
+#
+# 它和被放在 /me 那组的 PUT /password 是两条不同的路：
+# 那条是本人改密码（要原密码），这条是管理员重置他人密码（不要原密码，
+# 权限由 get_current_admin 兜住）。
+@router.put("/{user_id}/password")
+def reset_user_password(
+    user_id: int,
+    data: AdminPasswordResetRequest,
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    user_service.reset_password(db, user_id, data)
+    return Response.success(message="密码已重置")

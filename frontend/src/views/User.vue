@@ -47,9 +47,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="160">
+        <el-table-column label="操作" width="250">
           <template #default="{ row }">
             <el-button type="primary" text bg @click="handleEdit(row)">编辑</el-button>
+            <el-button type="warning" text bg @click="handleResetPassword(row)">重置密码</el-button>
             <el-button type="danger" text bg @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -79,7 +80,8 @@
         </el-form-item>
         <!-- 只在新增时显示。后端 schemas/user.py 的 UserUpdateRequest **没有** password 字段，
              编辑时填的密码会被 pydantic 静默丢掉 —— 界面上「改了密码、提示成功、其实没改」。
-             改密码统一走 /manager/password 页面。
+             改别人的密码请走表格里的「重置密码」按钮（下一段那个弹窗），
+             改自己的走 /manager/password 页面。
              这里用 v-if 而不是 disabled：FormItem 卸载时会连带把 prop 从表单注销，
              编辑态就不会再触发下面那条 required 校验。 -->
         <el-form-item v-if="!form.id" label="密码" prop="password">
@@ -117,12 +119,57 @@
         <el-button type="primary" :loading="formLoading" @click="handleSave">确定</el-button>
       </template>
     </el-dialog>
+
+    <!-- 重置密码。跟上面那个「编辑」弹窗分开，是因为两者的服务端语义完全不同：
+         编辑走 PUT /api/user/{id}，请求体里**没有** password 字段（填了也会被
+         pydantic 静默丢掉）；重置走 PUT /api/user/{id}/password，是这个功能唯一
+         的入口。混在一个弹窗里迟早会有人以为"编辑里填密码就能改"。
+         不设「确认密码」：管理员本来就不是这个密码的使用者，输错了再重置一次即可
+         （新增用户那个表单也只有单个密码框，保持一致）。 -->
+    <!-- 名字一律用 pwd 前缀，别用 reset*：本文件里已经有一个 resetForm() 函数
+         （重置「编辑」弹窗用的），重名会直接编译不过。 -->
+    <el-dialog v-model="pwdVisible" title="重置密码" width="420">
+      <el-form
+        ref="pwdFormRef"
+        :rules="pwdRules"
+        :model="pwdForm"
+        label-width="80px"
+        class="app-dialog-form"
+      >
+        <el-form-item label="账号">
+          <span>{{ pwdForm.username }}</span>
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input
+            type="password"
+            show-password
+            v-model="pwdForm.newPassword"
+            placeholder="请输入新密码"
+          />
+        </el-form-item>
+        <el-alert type="warning" :closable="false" show-icon>
+          重置后，该用户已登录的所有设备都会立刻退出，需要用新密码重新登录。
+        </el-alert>
+      </el-form>
+      <template #footer>
+        <el-button @click="pwdVisible = false">取消</el-button>
+        <el-button type="primary" :loading="pwdLoading" @click="submitResetPassword">
+          确定
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
 import { Search, Plus } from '@element-plus/icons-vue'
-import { createUserApi, deleteUserApi, getUserPageListApi, updateUserApi } from '@/api/user'
+import {
+  createUserApi,
+  deleteUserApi,
+  getUserPageListApi,
+  resetUserPasswordApi,
+  updateUserApi
+} from '@/api/user'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 const params = reactive({
@@ -148,6 +195,31 @@ const form = reactive({
   status: 1
 })
 const formLoading = ref(false)
+
+// 重置密码弹窗。跟编辑弹窗的各状态完全独立，别合并——两者的提交地址和
+// 成功后要做的事都不一样（编辑要刷新表格，重置不用）。
+// ⚠️ 变量名一律 pwd 前缀：本文件已有一个 resetForm() 函数，再声明一个同名变量
+// 会直接把构建打挂（Identifier 'resetForm' has already been declared）。
+const pwdVisible = ref(false)
+const pwdLoading = ref(false)
+const pwdFormRef = ref()
+// 三个键都显式声明，理由同上面 form 里那段注释：Object.assign 清不掉的键，
+// 会在下次打开弹窗时把上一个人输过的明文密码留在框里。
+const pwdForm = reactive({
+  userId: null,
+  username: '',
+  newPassword: ''
+})
+
+const pwdRules = {
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    // 下限跟后端 schemas/user.py 的 PASSWORD_MIN_LENGTH 对齐（那边是 3）。
+    // 上限（72 字节）不在这儿算：前端要按 UTF-8 字节数数，一个汉字 3 字节，
+    // 用 max 会按字符数卡、跟后端对不上，索性交给后端，超了是 422。
+    { min: 3, message: '密码至少 3 位', trigger: 'blur' }
+  ]
+}
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
@@ -204,6 +276,35 @@ const handleDelete = (row) => {
       }
     }
   )
+}
+
+const handleResetPassword = (row) => {
+  pwdForm.userId = row.id
+  pwdForm.username = row.username
+  pwdForm.newPassword = ''
+  // 上一次校验留下的红字要清掉，否则新打开的弹窗一上来就带着别人的报错。
+  // 首次打开时 el-dialog 的内容还没渲染，拿不到 ref，所以要有 ?.
+  pwdFormRef.value?.clearValidate()
+  pwdVisible.value = true
+}
+
+const submitResetPassword = async () => {
+  const valid = await pwdFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  pwdLoading.value = true
+  try {
+    const res = await resetUserPasswordApi(pwdForm.userId, {
+      new_password: pwdForm.newPassword
+    })
+    if (res.code === 200) {
+      pwdVisible.value = false
+      // 成功文案要带上"被踢下线"这件事：管理员点完就走了，不会去想对方的
+      // 手机为什么突然退出登录，这条提示是唯一的交代。
+      ElMessage.success(`已重置【${pwdForm.username}】的密码，该用户所有设备已退出登录`)
+    }
+  } finally {
+    pwdLoading.value = false
+  }
 }
 
 const handleSave = async () => {

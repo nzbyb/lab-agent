@@ -19,6 +19,7 @@
     B3  已关闭实验室不列设备 -> TestClosedLabEquipmentVisibility
     B4  新建用户必须给密码  -> TestCreateUserPasswordRequired
     B5  出错信息不回显输入  -> TestErrorMessagesHideUserData
+    B6  密码长度按字节卡    -> TestPasswordByteLimit
 """
 
 import json
@@ -41,9 +42,15 @@ from app.schemas.reservation import (
     normalize_date,
     normalize_time,
 )
-from app.schemas.user import UserCreateRequest, UserUpdateRequest
+from app.schemas.user import (
+    AdminPasswordResetRequest,
+    PasswordUpdateRequest,
+    UserCreateRequest,
+    UserUpdateRequest,
+)
 from app.services import reservation_service, user_service
 from app.services.agent_service import _build_history
+from app.utils.password import hash_password
 
 LOGIN = "/api/auth/login"
 REGISTER = "/api/auth/register"
@@ -782,6 +789,96 @@ class TestCreateUserPasswordRequired:
 
         assert resp.status_code == 422
         assert db.query(User).count() == before
+
+
+class TestPasswordByteLimit:
+    """bcrypt 5.0 碰到超过 72 字节的密码会**直接抛 ValueError**
+    （password cannot be longer than 72 bytes），不是老版本那种静默截断。
+    那个异常不属于 BusinessException，会一路冒到 global_exception_hadler，
+    于是「注册时密码太长」表现为 HTTP 500「服务器内部错误」。
+
+    这里钉三件事：
+
+    1. 边界算的是**字节**不是字符。一个汉字在 UTF-8 里占 3 字节，所以上限是
+       24 个汉字。写成 len(value) > 72 的话，中文那两条会红——而中文密码恰恰
+       是最容易被用户设出来的。
+    2. 拦在 schema 层，超长拿到的是 422 而不是 500。这两个码的区别有信息量：
+       422 是"你的输入不对"，500 是"我们炸了"。
+    3. 登录那条路**只卡上限、不卡下限**。库里真的存着当年没卡过长度时注册的
+       短密码，卡下限等于把人锁在门外。
+    """
+
+    OLD = "pw123456"
+
+    def test_72_bytes_accepted(self):
+        """正好在上限上，必须能过"""
+        assert PasswordUpdateRequest(
+            old_password=self.OLD, new_password="a" * 72
+        ).new_password == "a" * 72
+
+    def test_73_bytes_rejected(self):
+        with pytest.raises(ValidationError):
+            PasswordUpdateRequest(old_password=self.OLD, new_password="a" * 73)
+
+    def test_24_chinese_chars_accepted(self):
+        """24 × 3 = 72 字节，正好在上限上"""
+        PasswordUpdateRequest(old_password=self.OLD, new_password="中" * 24)
+
+    def test_25_chinese_chars_rejected(self):
+        """25 × 3 = 75 字节。**这条是「按字节不按字符」的守门员**：
+        写成 len(new_password) > 72 的话它照样通过，而 25 个汉字送到 bcrypt
+        就是一个 500。"""
+        with pytest.raises(ValidationError):
+            PasswordUpdateRequest(old_password=self.OLD, new_password="中" * 25)
+
+    def test_register_capped_too(self):
+        """注册是同一个毛病，不是只有改密码那一条路"""
+        with pytest.raises(ValidationError):
+            RegisterRequest(username="u", password="a" * 100)
+
+    def test_admin_reset_capped_too(self):
+        with pytest.raises(ValidationError):
+            AdminPasswordResetRequest(new_password="中" * 25)
+
+    def test_empty_new_password_rejected(self):
+        """B4 的同一个毛病在改密码这条路上：new_password="" 以前能过，
+        等于把密码改成空串。"""
+        with pytest.raises(ValidationError):
+            PasswordUpdateRequest(old_password=self.OLD, new_password="")
+
+    def test_login_has_no_lower_bound(self):
+        """老账号里存着短密码，登录不能被下限拦在门外"""
+        assert LoginRequest(username="u", password="a").password == "a"
+
+    def test_login_still_capped(self):
+        """但没有上限的话，verify_password 会在 bcrypt 里炸成 500"""
+        with pytest.raises(ValidationError):
+            LoginRequest(username="u", password="a" * 100)
+
+    def test_old_password_has_no_lower_bound(self):
+        """改密码时的原密码同理：短密码的老账号必须还能改密码"""
+        assert PasswordUpdateRequest(
+            old_password="a", new_password="newpw123"
+        ).old_password == "a"
+
+    def test_api_returns_422_not_500(self, client):
+        """打真接口。schema 层拦住了才算数——只断言 schema 的话，
+        哪天后端换了个入口（比如又加一条直接收 dict 的路由）这里发现不了。"""
+        resp = client.post(
+            REGISTER, json={"username": "longpw", "password": "a" * 100}
+        )
+        assert resp.status_code == 422
+        assert resp.status_code != 500
+
+    def test_utils_layer_is_second_line_of_defense(self):
+        """绕过 schema 直接调 service 时（脚本、以后新加的接口），
+        拿到的必须是一句能看懂的话，而不是 bcrypt 的 500。"""
+        with pytest.raises(BusinessException):
+            hash_password("a" * 73)
+        with pytest.raises(BusinessException):
+            hash_password("中" * 25)
+        # 边界上不能误伤
+        hash_password("a" * 72)
 
 
 class TestErrorMessagesHideUserData:

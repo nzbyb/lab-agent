@@ -50,7 +50,19 @@ export async function chatStreamApi(data, onEvent) {
     body: JSON.stringify(data)
   })
   if (res.status === 401) {
-    throw new Error('登录已失效， 请重新登录')
+    // 这条走的是原生 fetch，**不经过 utils/request.js 的拦截器**，所以登出、跳转、
+    // 提示都得调用方自己来。这里只负责把状态码和原因带出去（挂个 status 属性），
+    // 交给 AIChat.vue 决定怎么办。
+    let message = '登录已失效，请重新登录'
+    try {
+      const body = await res.json()
+      if (body?.message) message = body.message
+    } catch {
+      // 后端 401 的响应体不是 JSON 时就用上面那句兜底，不要因为它把 401 变成别的错
+    }
+    const err = new Error(message)
+    err.status = 401
+    throw err
   }
   if (!res.ok || !res.body) {
     throw new Error('流式接口请求失败')

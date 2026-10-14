@@ -33,6 +33,21 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="用户被禁用"
         )
+
+    # 令牌版本号：改密码时 users.token_version 会 +1，于是该用户此前签发的所有令牌
+    # 都在这里对不上号。这个比对**不额外花一次查询**——上面那句 db.query(User) 本来
+    # 每个请求就查一次。
+    #
+    # `.get("ver", 0)` 的兜底不是随手写的：加这一列**之前**签发的令牌里没有 ver 声明，
+    # 而老库迁移时 token_version 一律补 0，两边都按 0 算就对得上，所以部署这一版不会
+    # 把已登录的人全踢下线。代价是上线前就改过密码、握着旧令牌的人要等下次改密码才失效。
+    #
+    # ⚠️ 文案约束：「密码已变更」这句话只有在"版本号仅因密码事件自增"时才成立。
+    # 将来如果给角色调整、强制下线、封号也复用这个 +1，就得改成中性文案，否则它在撒谎。
+    if payload.get("ver", 0) != (user.token_version or 0):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="密码已变更，请重新登录"
+        )
     return user
 
 

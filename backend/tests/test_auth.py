@@ -204,6 +204,10 @@ class TestPermissionMatrix:
         ("GET", USER_LIST, None),
         ("POST", USER_COLLECTION, {"username": "x", "password": "pw123456"}),
         ("PUT", "/api/user/1", {"name": "x"}),
+        # 重置他人密码是提权最狠的一条：拿到它就能直接接管任何账号。
+        # 请求体刻意是合法的（密码长度合规），这样它要是在权限上漏了，
+        # 失败原因只可能是权限，不会跟参数校验混在一起。
+        ("PUT", "/api/user/1/password", {"new_password": "pw123456"}),
         ("DELETE", "/api/user/1", None),
     ]
 

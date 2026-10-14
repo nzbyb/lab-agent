@@ -47,7 +47,10 @@ service.interceptors.response.use(
     if (err.response) {
       const httpStatusCode = err.response.status
       if (httpStatusCode === 401) {
-        // 这条不发 toast（现状如此，本次不扩范围），只登出并跳登录页
+        // 把后端那句具体原因透出来。以前这条是静默的：人被踢回登录页却不知道为什么，
+        // 只能猜是网络问题还是自己操作错了。现在服务端会因为好几种原因 401
+        //（「密码已变更，请重新登录」「用户被禁用」「登录已失效」），说清楚最省事。
+        ElMessage.error(err.response.data?.message || '登录已失效，请重新登录')
         useUserStore(pinia).logout()
         router.push('/login')
       } else {

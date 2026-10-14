@@ -133,8 +133,9 @@ const login = async () => {
     // 1) 密码输错走的是 body.code=500 且 HTTP 200，拦截器弹完提示后是
     //    return data（resolve），那条路径本来就不会产生未捕获 rejection；
     //    真正会 reject 的是网络不通和 HTTP 4xx/5xx。
-    // 2) request.js 里 HTTP 401 那条只 logout + 跳转、不发提示，它的 rejection
-    //    也会被这里一并吞掉。正常情况 /api/auth/login 不返回 401，先这样。
+    // 2) request.js 里 HTTP 401 那条会先弹一句后端的 message、再 logout + 跳转，
+    //    它的 rejection 也会被这里一并吞掉。正常情况 /api/auth/login 不返回 401
+    //    （账号密码错是 body.code=500 + HTTP 200），先这样。
   } finally {
     loadingValue.value = false
   }

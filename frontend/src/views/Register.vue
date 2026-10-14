@@ -82,7 +82,13 @@ const validatePass = (rule, value, callback) => {
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  // 下限跟后端 PASSWORD_MIN_LENGTH 对齐（3 位）。不加这条的话，输入 1-2 位
+  // 密码会一路提交到后端才被拒，弹回来的是「请求参数校验错误」——
+  // 用户根本猜不到是密码太短。上限（72 字节）交给后端，理由同 Password.vue。
+  password: [
+    { required: true, message: '请输入密码', trigger: 'blur' },
+    { min: 3, message: '密码至少 3 位', trigger: 'blur' }
+  ],
   confirmPassword: [{ validator: validatePass, trigger: 'blur' }]
 }
 

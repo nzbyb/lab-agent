@@ -227,6 +227,8 @@ import {
   Promotion
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
+import { pinia } from '@/stores'
+import router from '@/router'
 import { AI_LAST_CONVERSATION_PREFIX } from '@/utils/auth'
 
 // 不要解构：const { userInfo } = useUserStore() 会丢掉响应性
@@ -688,6 +690,14 @@ const handleSend = async () => {
       scrollToBottom()
     })
   } catch (err) {
+    // 401 说明登录态已经废了（改密码、被禁用、令牌到期）。这条路走的是原生 fetch，
+    // 不经过 utils/request.js 的拦截器，所以要自己登出 + 跳登录页——不然人会一直
+    // 停在这个页面，界面看着还像登录着，只能靠切到别的页面才被兜住。
+    // 显式传 pinia 实例的写法与 request.js 一致，原因见那个文件里的注释。
+    if (err.status === 401) {
+      useUserStore(pinia).logout()
+      router.push('/login')
+    }
     assistant.status = ''
     if (!assistant.content) {
       assistant.content = err.message || '网络异常'

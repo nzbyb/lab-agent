@@ -53,7 +53,7 @@ from datetime import datetime, timedelta  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.database import Base, SessionLocal, engine  # noqa: E402
+from app.database import Base, SessionLocal, engine, run_migrations  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # 第二道保险丝：查 engine 真正连上的库，而不是我们以为改成的库名。
@@ -96,7 +96,20 @@ def _truncate_all() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _database_schema():
-    Base.metadata.create_all(bind=engine)
+    """测试库的表结构**走迁移**，不用 create_all。
+
+    原来这里是 `Base.metadata.create_all`，它只建"缺的表"，给已有表**加列一概不管**。
+    测试库 lab_agent_test 是一张长期存在的库，于是"模型加了列、测试库没这列"的表现是
+    整片用例报 Unknown column；而 CI 里库是新建的、create_all 会带上新列——于是
+    "CI 绿、本机红"，最难查的那种。
+
+    换成跑迁移之后：测试库跟迁移对齐，模型和迁移一旦对不上（忘了写迁移，或迁移写错）
+    测试会当场红。CI 顺带成了"迁移写错"的拦截网——在此之前它完全拦不住。
+
+    注意这仍然要求测试库**已经存在**（迁移只建表，不建库），见 README 里那句
+    "跑之前要另建一个空库"。
+    """
+    run_migrations()
     yield
 
 
@@ -250,6 +263,12 @@ def auth_headers():
     """给某个用户签一个真 token，用来打需要登录的 HTTP 接口"""
 
     def _make(user):
-        return {"Authorization": f"Bearer {create_access_token(user.id)}"}
+        # 令牌里必须带上用户当前的版本号，否则签出来的令牌会被
+        # dependencies/auth.py 的版本比对拒掉，全部鉴权用例一起红。
+        return {
+            "Authorization": (
+                f"Bearer {create_access_token(user.id, user.token_version or 0)}"
+            )
+        }
 
     return _make
