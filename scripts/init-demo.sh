@@ -184,12 +184,36 @@ echo "==> 灌实验室与设备数据（backend/demo_data.sql）"
 if ! docker compose exec -T mysql sh -c \
       'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 lab_agent' \
       < backend/demo_data.sql 2>"$TMP/sql.err"; then
-  echo "灌数据失败：" >&2
+  echo >&2
+  echo "############################################################" >&2
+  echo "#  灌数据失败 —— 脚本在这里停住了，后面几步都没有执行。     #" >&2
+  echo "############################################################" >&2
+  echo >&2
   grep -v "Using a password on the command line" "$TMP/sql.err" >&2 || true
   echo >&2
-  echo "如果报的是外键错误，说明库里已经有预约记录了。可以：" >&2
-  echo "    bash scripts/init-demo.sh ... 之前先执行" >&2
-  echo "    docker compose exec -T mysql sh -c 'mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" lab_agent -e \"DELETE FROM reservation;\"'" >&2
+
+  # 只有真撞上外键才给"先清预约"那条建议。不分青红皂白地一律提示去删预约，
+  # 在别的原因失败时（比如 mysql 容器压根没起来）会把人引到一条完全无关的路上。
+  # MySQL 命令行报外键错的原话是：
+  #   ERROR 1451 (23000) at line N: Cannot delete or update a parent row: a foreign key constraint fails (...)
+  # 三个特征串任中一个即可（1451 是外键约束的专用错误码）。
+  if grep -qi "foreign key\|Cannot delete or update a parent row\|ERROR 1451" "$TMP/sql.err"; then
+    BLOCKING="$(MYSQL_Q 'SELECT COUNT(*) FROM reservation;' | tr -d '\r')"
+    echo "------------------------------------------------------------" >&2
+    echo "原因：外键挡住了。demo_data.sql 一上来就 DELETE FROM labs，" >&2
+    echo "而库里还有 ${BLOCKING:-?} 条预约记录指着这些实验室，MySQL 不让删。" >&2
+    echo >&2
+    echo "**这个脚本目前不能直接重复跑**——不是坏了，是需要你先清一次。" >&2
+    echo >&2
+    echo "三选一：" >&2
+    echo "  1) 清掉预约再重跑（账号、实验室、设备都不动）：" >&2
+    echo "     docker compose exec -T mysql sh -c 'mysql -uroot -p\"\$MYSQL_ROOT_PASSWORD\" lab_agent -e \"DELETE FROM reservation;\"'" >&2
+    echo "  2) 连数据卷一起重来（账号和预约全没，等于全新安装）：" >&2
+    echo "     docker compose down -v && docker compose up -d" >&2
+    echo "  3) 你只是想要一批演示预约？那不用跑这个脚本，直接：" >&2
+    echo "     docker compose exec -T backend python scripts/seed_demo_data.py --reset --apply" >&2
+    echo "------------------------------------------------------------" >&2
+  fi
   exit 1
 fi
 
