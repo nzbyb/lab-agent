@@ -284,7 +284,6 @@ docker-compose.yml MySQL + 后端 + 前端
 
 ![管理员审核](docs/screenshots/audit.png)
 
-## 仓库里的素材
+## 开源许可
 
-- `素材/实验室.jpg` 是早期找的示意图，代码里没有任何地方引用。
-- 仓库暂未指定开源许可。
+MIT，全文见根目录的 [`LICENSE`](LICENSE)。
