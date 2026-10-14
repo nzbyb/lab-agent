@@ -19,6 +19,20 @@ def _book(db, user, request):
     return reservation_service.create_reservation(db, user, request)
 
 
+def _freeze_clock(monkeypatch, moment):
+    """把 reservation_service 里的 datetime.now() 钉在某一刻。
+
+    create_reservation 取的是模块级的 `datetime.now()`，所以换掉这个模块属性就能
+    完全接管它的时钟——不用动系统时间，也不会波及别的用例（monkeypatch 用完自动还原）。
+    """
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return moment
+
+    monkeypatch.setattr(reservation_service, "datetime", _FrozenDatetime)
+
+
 def _count(db):
     return db.query(Reservation).count()
 
@@ -194,9 +208,27 @@ class TestValidation:
         with pytest.raises(BusinessException, match="结束时间不能早于开始时间"):
             _book(db, user, booking(lab.id, start_time="11:00", end_time="09:00"))
 
-    def test_today_with_past_time_rejected(self, db, make_user, make_lab, booking):
+    def test_today_with_past_time_rejected(self, db, make_user, make_lab, booking, monkeypatch):
+        """今天、但开始时间已经过去了。
+
+        时钟以前是"看运气"的：拿 start_time="00:00" 当"已经过去的时间"，前提是
+        当前时刻晚于 00:00。可 create_reservation 取出的 current_time 用的是
+        `%H:%M`，在 **UTC 00:00:00–00:00:59 这一分钟**里它正好也是 "00:00"，
+        于是 `start_time < current_time` 为假、这条判断被整个跳过，往下走到开放时段
+        那两条，抛的是"不能早于实验室开放时间"，跟这里期待的文案例外对不上 → 红。
+        每天只有 60 秒窗口，约 0.07%/次——最难查的那种红（只在一天里的某一分钟出现，
+        重跑一次就好了，于是很容易被当成"偶发"记过去）。
+
+        现在把时钟钉死，跟跑在哪个日期、哪一分钟彻底无关。
+        """
         user, lab = make_user(), make_lab()
-        today = datetime.now().strftime("%Y-%m-%d")
+        moment = datetime(2026, 10, 14, 12, 0)
+        _freeze_clock(monkeypatch, moment)
+        # 守卫：确认时钟真的换上了。没换上的话这条用例会悄悄退回"看运气"，
+        # 而且绝大多数时候照样是绿的——正是最难发现的那种失效。
+        assert reservation_service.datetime.now() == moment
+
+        today = moment.strftime("%Y-%m-%d")
         with pytest.raises(BusinessException, match="不能早于当前时间"):
             _book(db, user, booking(lab.id, date=today, start_time="00:00", end_time="00:30"))
 
