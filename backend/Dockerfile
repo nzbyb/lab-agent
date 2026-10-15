@@ -40,6 +40,20 @@ RUN apt-get update \
 WORKDIR /app
 
 # ------------------------------------------------------------
+# pip 源做成了可覆盖的构建参数（默认仍是官方源）。
+#
+# 为什么需要这一层：在国内的服务器上构建时，官方 PyPI 常常连不上、
+# download.pytorch.org 实测只有十几 KB/s（200 多兆的 torch 得下几个小时），
+# 而阿里云的镜像能跑到 10 MB/s 以上。把地址写死在 Dockerfile 里的话，
+# 换个网络环境就得改代码。
+#
+# 默认值保持官方源，所以本机、CI、国外部署都**不受任何影响**；
+# 国内部署时在根目录 .env 里填两行就能切过去（见 .env.example）。
+# ------------------------------------------------------------
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+
+# ------------------------------------------------------------
 # 先单装 CPU 版 torch，再装 requirements —— 顺序不能反。
 #
 # requirements.txt 里没有 torch，它是 sentence-transformers 的依赖，
@@ -47,10 +61,10 @@ WORKDIR /app
 # 镜像白白多个两三 G，而这个容器根本没有 GPU 可用。
 # （CI 里是同一个道理，同一个写法。）
 # ------------------------------------------------------------
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install torch --index-url ${TORCH_INDEX_URL}
 
 COPY requirements.txt .
-RUN pip install -r requirements.txt
+RUN pip install -r requirements.txt --index-url ${PIP_INDEX_URL}
 
 COPY . .
 

@@ -74,6 +74,12 @@ services:
   backend:
     build:
       context: ./backend
+      # pip 源透传进构建。不填就用 Dockerfile 里的官方源默认值；
+      # 在国内服务器上构建时，在根目录 .env 里指到镜像源（见 .env.example），
+      # 否则官方 PyPI 连不上、PyTorch 源只有十几 KB/s。
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
     restart: unless-stopped
     depends_on:
       mysql:
