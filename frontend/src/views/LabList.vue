@@ -19,7 +19,17 @@
       </div>
       <div>
         <el-row :gutter="16" v-loading="loading">
-          <el-col v-for="item in tableData" :key="item.id" :span="6" style="margin-bottom: 16px">
+          <!-- 原来写死 :span="6"（永远四列）。手机上每张卡片只剩 90 来像素宽，
+               图和标题全被压变形。改成按屏宽分档：手机一列、小平板两列、
+               电脑仍然四列（md 及以上跟改动前完全一致）。 -->
+          <el-col
+            v-for="item in tableData"
+            :key="item.id"
+            :xs="24"
+            :sm="12"
+            :md="6"
+            style="margin-bottom: 16px"
+          >
             <el-card shadow="hover">
               <img
                 v-if="item.img"

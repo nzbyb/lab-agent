@@ -199,3 +199,78 @@ img {
   height: 150px;
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+ * 窄屏适配（手机）
+ *
+ * 断点统一用 767px，跟 Home.vue 里那条保持一致——两个断点不一致的话，
+ * 会出现"首页已经变单列、外框还是桌面版"这种半截状态。
+ *
+ * 这里只放**跨页面共用**的规则。单个页面自己的排布（首页的图表网格、
+ * 聊天页的输入区）留在各自组件的 scoped 样式里，免得一处调整误伤别处。
+ *
+ * 为什么要做这一层：整套界面原本是按电脑端写的，窄屏下侧边栏会吃掉
+ * 一大半宽度、表格会把每列压成一条缝、弹窗宽度写死 450px 直接顶出屏幕。
+ * ------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  /* 内容区留白收窄，把宽度让给内容 */
+  .el-main {
+    padding: 12px;
+  }
+
+  /* 搜索条件行：改成可换行，每个控件各占一行。
+     原来是一行硬排（输入框 240px + 下拉框 200px + 按钮），窄屏下必然溢出。 */
+  .app-search-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .app-search-input,
+  .app-search-select {
+    width: 100%;
+    margin-right: 0;
+  }
+  /* 按钮不要跟着撑满一行，它本来就短 */
+  .app-search-bar .el-button {
+    flex: 0 0 auto;
+  }
+
+  /* 分页靠右在窄屏下会贴着边，居中更好点 */
+  .app-pagination {
+    justify-content: center;
+  }
+
+  /* 弹窗：三处 width="450"/420（写死的像素）在窄屏下会顶出屏幕。
+     这几处是行内 style，只能靠 !important 盖。 */
+  .el-dialog {
+    width: 92% !important;
+    margin-top: 8vh !important;
+  }
+  /* 弹窗里的表单原本右侧留了 30px 给按钮，窄屏下这 30px 很宝贵 */
+  .app-dialog-form {
+    padding-right: 0;
+  }
+
+  /* 表格：列多（最多十列），窄屏下 Element Plus 会把每列压成一条缝，字全竖过来。
+     做法是给表格一个最小宽度（EP 按容器的 clientWidth 算列宽，给了 min-width
+     它才会按更宽的画布重算），再让外面那层卡片体横向可滚。
+     两条缺一不可：只给 min-width，表格会顶出卡片、把整页撑出横向滚动条。
+
+     用 :has() 限定"卡片体里确实有表格"才生效——不加这个限定的话，
+     AI 对话页的卡片体（纵向 flex 布局）也会变成滚动容器，跟它内部的滚动打架。
+     :has() 是 2022 年后的浏览器都支持的；老浏览器上这条不生效，
+     退化成"表格还是挤"，不会更糟。 */
+  .el-card__body:has(.el-table) {
+    overflow-x: auto;
+  }
+  .el-card__body:has(.el-table) .el-table {
+    min-width: 720px;
+  }
+
+  /* 上传框（头像/封面）在窄屏下缩一点，两边别贴边 */
+  .avatar-uploader .avatar,
+  .el-icon.avatar-uploader-icon {
+    width: 110px;
+    height: 110px;
+  }
+}

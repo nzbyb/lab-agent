@@ -336,6 +336,10 @@ const login = async () => {
 @media (max-width: 900px) {
   .login-page {
     flex-direction: column;
+    /* 手机上 100vh 是"地址栏收起后"的高度，地址栏一露出来页面底部就被推出去。
+       dvh 跟着可视区实时变；不认 dvh 的老浏览器退回上一行。 */
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 
   .brand-panel {

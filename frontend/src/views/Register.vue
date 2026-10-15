@@ -126,4 +126,21 @@ const register = async () => {
   text-align: center;
   background-color: white;
 }
+
+@media (max-width: 767px) {
+  /* 1100px 的屏上 380px 的卡片居中很好看，375px 的手机上它就顶满两边、
+     一点留白都没有。改成由外层 padding 控制留白、卡片自己撑满。 */
+  .register-container {
+    /* 手机上 100vh 是"地址栏收起后"的高度，地址栏一露出来表单底部就被推出屏幕。
+       dvh 跟着可视区实时变；不认 dvh 的老浏览器退回上一行。 */
+    height: 100vh;
+    height: 100dvh;
+    padding: 16px;
+  }
+  .register-box {
+    width: 100%;
+    max-width: 380px;
+    padding: 24px 18px;
+  }
+}
 </style>

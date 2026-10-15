@@ -166,7 +166,10 @@
 
     <!-- 历史对话。列表只列自己的（后端按 user_id 过滤，管理员也看不到别人的）。
          点标题＝把那条读回来接着聊；点删除＝真删，连带消息一起。 -->
-    <el-drawer v-model="historyOpen" title="历史对话" size="360px">
+    <!-- 宽度用 min() 而不是写死 360px：手机屏总共才 375~430px，360 几乎占满、
+         显得两边没有留白。交给 CSS 决定，就不用为此加 resize 监听。
+         （el-drawer 的 size 是字符串时原样透传给 width，min() 是合法值。） -->
+    <el-drawer v-model="historyOpen" title="历史对话" size="min(360px, 86vw)">
       <div v-loading="historyLoading" class="history">
         <el-empty
           v-if="!historyLoading && !historyList.length"
@@ -1343,5 +1346,38 @@ const parseMarkdown = (text) => {
   margin-top: 2px;
   font-size: 12px;
   color: var(--app-text-secondary);
+}
+
+/* ---------------------------------------------------------------------------
+ * 窄屏适配（断点跟 global.css、Home.vue 保持一致：767px）
+ * ------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  /* 卡片高度原来按桌面算：100vh 减掉页头 60px 和内容区上下各 20px。
+     窄屏下内容区的内边距收到 12px，所以要减的是 60 + 24 = 84px。
+     更要紧的是 100vh 在手机上等于"地址栏收起后"的高度——地址栏一露出来，
+     输入区就被顶到屏幕外，得往下滚才能打字。dvh 跟着可视区域实时变，
+     所以两种情况都正确；不认 dvh 的老浏览器退回上一行。 */
+  .chat-card {
+    height: calc(100vh - 84px);
+    height: calc(100dvh - 84px);
+    /* 手机上键盘弹起来时可视高度很小，别把聊天区压没 */
+    min-height: 320px;
+  }
+
+  /* 气泡用掉更多横向空间：76% 是按宽屏留白定的，窄屏下太保守，
+     一句话要折好几行 */
+  .msg-main {
+    max-width: 86%;
+  }
+
+  /* 这条提示是关于回车键的，手机键盘上没有 Shift，留着只会占地方 */
+  .composer-hint {
+    display: none;
+  }
+
+  /* 空态的引导问题：窄屏下每个占一行，点起来不容易误触 */
+  .welcome-chip {
+    width: 100%;
+  }
 }
 </style>
