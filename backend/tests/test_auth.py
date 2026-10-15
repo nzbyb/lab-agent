@@ -47,7 +47,7 @@ class TestRegister:
         resp = client.post(
             REGISTER, json={"username": "taken", "password": "pw123456"}
         )
-        assert resp.json()["code"] == 500
+        assert resp.json()["code"] == 400
         assert resp.json()["message"] == "账号已存在"
 
     def test_register_cannot_escalate_to_admin(self, client, db):
@@ -91,12 +91,14 @@ class TestLogin:
     def test_wrong_password_rejected(self, client, make_user):
         make_user(username="alice", password="pw123456")
         resp = client.post(LOGIN, json={"username": "alice", "password": "wrong"})
-        assert resp.json()["code"] == 500
+        # 业务错误统一是 400。原来这里是 500，而 500 的含义是"服务器自己出故障了"，
+        # 密码输错报 500 会把排查的人往错的方向带；500 现在只留给全局兜底那条路。
+        assert resp.json()["code"] == 400
         assert resp.json()["message"] == "账号或密码错误"
 
     def test_unknown_user_rejected(self, client):
         resp = client.post(LOGIN, json={"username": "ghost", "password": "pw123456"})
-        assert resp.json()["code"] == 500
+        assert resp.json()["code"] == 400
         assert resp.json()["message"] == "账号或密码错误"
 
     def test_unknown_user_and_wrong_password_are_indistinguishable(
