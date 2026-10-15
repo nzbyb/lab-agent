@@ -172,6 +172,83 @@ npm run dev            # http://localhost:5173
 
 ---
 
+## 部署到服务器
+
+本项目已经在一台阿里云 2 核 4G 的机器上真跑起来了（Ubuntu 24.04），下面是照实记下来的过程和坑。
+
+### 机器怎么选
+
+- **内存给到 4G**。三个容器实测吃 1.2～1.6G，大头是向量模型和 MySQL；2G 会很紧。
+- **带宽用"按使用流量"**（大陆 ¥0.8/GB，只算出方向，不走流量不收费）。开了 gzip、压过图之后，
+  一个访客大约 0.6MB，一千人次不到一块钱，比"按固定带宽"买小水管划算得多。
+- **国内地域想用域名走 80/443，必须先 ICP 备案**（1～3 周）。不备案也能用，但只能
+  `http://公网IP:端口` 这种形式，浏览器还会标"不安全"。
+
+### 步骤
+
+```bash
+apt-get update && apt-get install -y docker.io docker-compose-v2 git
+git clone https://github.com/nzbyb/lab-agent.git /opt/lab-agent && cd /opt/lab-agent
+cp .env.example .env      # 然后填 JWT_SECRET_KEY（现生成）、LLM_* 三项
+docker compose up -d --build
+bash scripts/init-demo.sh --username 你的账号名 --admin   # 灌演示数据 + 建管理员
+```
+
+`.env` 里的密钥一律在服务器上现填，别把本机那份传上去。JWT 密钥用
+`python3 -c "import secrets;print(secrets.token_urlsafe(48))"` 生成——后端启动时会自检，
+太短或者用了模板里的示例值会直接拒绝启动。
+
+### 国内网络下的三个坑
+
+这三条是在国内服务器上部署时真实撞到的，换个网络环境就都不存在：
+
+**1. Docker Hub 拉不动。** DNS 被污染（`registry-1.docker.io` 解析到 Facebook 的 IP），
+直连必然超时；阿里云自带的镜像加速器对**没缓存过的**镜像也会返回 404。可用做法是绕开 Docker Hub，
+从亚马逊官方的镜像站取——它是 Docker Hub 官方镜像的原样镜像：
+
+```bash
+docker pull public.ecr.aws/docker/library/python:3.11-slim
+docker tag  public.ecr.aws/docker/library/python:3.11-slim python:3.11-slim   # 打回原名字
+```
+
+四个基础镜像（`python:3.11-slim`、`node:24-slim`、`mysql:8.4`、`nginx:alpine`）都这么处理一遍，
+`docker compose build` 就会直接用本地的，构建脚本一个字都不用改。
+
+**2. pip 源不通、PyTorch 源慢到没法用。** 官方 PyPI 连不上，`download.pytorch.org` 实测只有
+16 KB/s（torch 的 CPU 版有 200 多兆，这个速度得下几个小时）。所以 `backend/Dockerfile` 把 pip 源
+做成了**可覆盖的构建参数**，默认值仍是官方源（本机、CI、国外部署行为不变），国内在 `.env` 里指过去：
+
+```bash
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+TORCH_INDEX_URL=https://mirror.sjtu.edu.cn/pytorch-wheels/cpu
+```
+
+> 注意 `mirrors.aliyun.com/pytorch-wheels/cpu` 是**文件列表，不是 pip 索引**，当 `--index-url`
+> 用会解析失败——实测两个写法都不行，最后用的是上海交大那份镜像。
+
+**3. 向量模型别用 scp 传。** HuggingFace 的缓存目录里全是符号链接（快照 → blobs → blobs/xx/…），
+而 Windows 自带的 scp 不跟随符号链接，传过去只有半个缓存，运行时照样报缺文件。让服务器自己下更快：
+
+```bash
+docker compose run --rm -e HF_ENDPOINT=https://hf-mirror.com backend \
+  python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-small-zh-v1.5')"
+```
+
+（`-e HF_ENDPOINT=...` 指到国内镜像站，25 秒下完。缓存挂在 compose 里的 `.hf-cache` 卷上，只需下一次。）
+
+### 上线后做的两处优化
+
+都是实测出来的数字：
+
+- **nginx 开 gzip**：官方镜像默认只压 `text/html`，JS/CSS 一律不压。主包 **837 KB → 261 KB**。
+  但**千万别把 `text/event-stream` 列进 `gzip_types`**——AI 回答走 SSE 流式，而 gzip 要攒够一块
+  才能压，列进去打字机效果就没了。
+- **封面图压到宽 800px**：**445 KB → 86 KB**，并给 `/uploads` 加上 30 天缓存头。
+
+两处加起来，首屏从约 2.2 MB 降到约 0.6 MB。
+
+---
+
 ## 测试
 
 ```bash
