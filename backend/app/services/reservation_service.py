@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import contextmanager
 
-from sqlalchemy import text
+from sqlalchemy import and_, or_, text
 from sqlalchemy.orm import Session
 from datetime import datetime
 
@@ -55,49 +55,67 @@ def get_reservation_page_list(
 
 
 def _busy_query(db: Session, lab_id: int, date: str, equipment_id: int | None):
-    """某天算"占用"的预约：约设备时只跟同一台设备的预约比，约整个实验室时只跟实验室级预约比"""
+    """某天算"占用"的预约。
+
+    **实验室和设备共用同一份占用**（2026-10 改的；在此之前两边各算各的，
+    约了设备不影响约整间实验室，反过来也一样）：
+
+      - 约整间实验室：这间实验室当天**全部**预约都算占用，包括各台设备各自的预约。
+        一间实验室只有一个场地，里面的设备被人约走了，整间就不该再对外约。
+      - 约某台设备：只算「这台设备自己的预约」+「整间实验室的预约」。
+        同一间实验室里**另一台**设备被约走不算冲突——否则约走一台设备就等于占掉整间，
+        设备预约这件事本身就没意义了。
+
+    改这条规则时**必须连着 _booking_lock_name 一起改**，两边范围对不上就会漏锁。
+    """
     query = db.query(Reservation).filter(
         Reservation.date == date,
         Reservation.status.in_([0, 1]),
     )
     if equipment_id:
-        # 设备分支不能再叠 lab_id。设备是能被改挂到别的实验室的
+        # 「这台设备」那条不能再叠 lab_id：设备是能被改挂到别的实验室的
         # （equipment_service.update_equipment 直接按 payload 里的 lab_id 改），
         # 老预约记的还是旧 lab_id，再按 lab_id 过滤就看不见它了——
         # 同一台设备同一时段能被约两次。
-        # equipment_id 全库唯一，单靠它就足以确定冲突范围。
-        return query.filter(Reservation.equipment_id == equipment_id)
-    # 实验室级预约按 lab_id 隔离，且只跟"整间实验室"的预约比。
-    # 约实验室和约设备互不冲突，这是刻意的设计，别顺手改成一起比。
-    return query.filter(
-        Reservation.lab_id == lab_id,
-        Reservation.equipment_id.is_(None),
-    )
+        # equipment_id 全库唯一，单靠它就足以确定这台设备的占用范围。
+        return query.filter(
+            or_(
+                Reservation.equipment_id == equipment_id,
+                and_(
+                    Reservation.lab_id == lab_id,
+                    Reservation.equipment_id.is_(None),
+                ),
+            )
+        )
+    # 整间实验室这条按 lab_id 认，连它下面各台设备的预约一起算。
+    #
+    # 已知的窄口子：设备被改挂到别的实验室之后，**改挂之前**那条预约记的还是旧
+    # lab_id，按新 lab_id 查就看不见它，此时段整间实验室会被放行，而那台设备现在
+    # 其实就摆在这间实验室里。要堵得把 equipment 表一起 join 进来，代价和收益不成
+    # 比例（得先有人搬设备、再有同期预约才会碰到），先记在这儿。
+    return query.filter(Reservation.lab_id == lab_id)
 
 
 # 抢锁最多等多久（秒）。等不到说明同一时段正被大量并发抢占，直接让用户重试。
 _BOOKING_LOCK_TIMEOUT = 5
 
 
-def _booking_lock_name(lab_id: int, date: str, equipment_id: int | None) -> str:
-    """同一天、同一个预约目标共用一个锁名。
+def _booking_lock_name(lab_id: int, date: str) -> str:
+    """同一天、同一间实验室共用一个锁名。
 
-    约整间实验室和约某台设备用不同的锁——它们在业务上互不冲突，
-    没必要互相排队。0 是"整间实验室"的占位，因为锁名不能为空。
+    锁名必须跟 _busy_query 的判定范围一一对应，否则会漏锁。
+    以前这里按「整间实验室」和「每台设备」各发一把锁，那是因为当时两者互不冲突；
+    现在约整间和约设备会互相挡，就必须合并成一把——不然「约整间」和「约某台设备」
+    的两个请求各拿一把锁、各查各的，都说没冲突，然后双双插入成功。
 
-    锁名必须跟 _busy_query 的判定范围一一对应，否则会漏锁：
-    设备那把锁只认 equipment_id（全库唯一），不能再带 lab_id，
-    不然设备改挂实验室之后新旧两个锁名不同，两个请求各拿一把锁同时进来。
-    实验室那把锁名保持原样：它的判定范围（lab_id + 日期）没变，
-    名字本来就带 lab_id、跟 _busy_query 的实验室分支对得上，没有改的理由。
+    合并之后同一间实验室里两台不同设备的预约也会互相排一下队。临界区只有
+    「查一次 + 插一条」，是毫秒级的，换来的是不用再论证两把锁的加锁顺序。
     """
-    if equipment_id:
-        return f"lab_agent:book:eq:{equipment_id}:{date}"
-    return f"lab_agent:book:{lab_id}:{date}:0"
+    return f"lab_agent:book:{lab_id}:{date}"
 
 
 @contextmanager
-def _booking_lock(lab_id: int, date: str, equipment_id: int | None):
+def _booking_lock(lab_id: int, date: str):
     """把「查冲突 + 插入」串成临界区。
 
     没有这把锁时，两个请求可以同时查到"没有冲突"，然后双双插入成功，
@@ -107,7 +125,7 @@ def _booking_lock(lab_id: int, date: str, equipment_id: int | None):
     再执行 RELEASE_LOCK 很可能落到另一条连接上，锁就永远留在原来那条连接里了。
     所以这里单独占用一条连接专职持锁，用完立刻释放并归还。
     """
-    name = _booking_lock_name(lab_id, date, equipment_id)
+    name = _booking_lock_name(lab_id, date)
     conn = engine.connect()
     try:
         acquired = conn.execute(
@@ -171,9 +189,9 @@ def create_reservation(db: Session, current_user: User, data: ReservationCreateR
 
     # 「查冲突」和「插入」之间必须互斥，否则两个并发请求会同时通过检查。
     # 用不到加锁的校验都放在临界区外面，减少排队时间。
-    with _booking_lock(data.lab_id, data.date, data.equipment_id):
-        # 同一实验室、同一天，已有"待审核/已通过"的预约与本次时间段重叠
-        # 约设备时只跟同一台设备的预约比；约整个实验室时只跟实验室级预约比
+    with _booking_lock(data.lab_id, data.date):
+        # 同一实验室、同一天，已有"待审核/已通过"的预约与本次时间段重叠就算占用。
+        # 占用范围（整间实验室 / 某台设备 / 两者互相影响）全在 _busy_query 里定。
         busy = _busy_query(db, data.lab_id, data.date, data.equipment_id).filter(
             Reservation.start_time < data.end_time,
             Reservation.end_time > data.start_time,

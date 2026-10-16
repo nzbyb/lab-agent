@@ -628,11 +628,15 @@ class TestStringFieldLengthCaps:
 
 
 class TestEquipmentConflictScope:
-    """A2r：设备冲突的范围只由 equipment_id 决定，不再叠一层 lab_id。
+    """A2r：命中「这台设备自己的老预约」靠的是 equipment_id，不叠 lab_id。
 
     设备是能被改挂到别的实验室的（equipment_service.update_equipment 直接按
-    payload 里的 lab_id 改），老预约记的还是旧 lab_id。冲突查询要是再按
-    lab_id 过滤，就看不见那条老预约了，同一台设备同一时段能被约两次。
+    payload 里的 lab_id 改），老预约记的还是旧 lab_id。设备的冲突查询要是把
+    equipment_id 和 lab_id 用 and 串起来，就看不见那条老预约了，
+    同一台设备同一时段能被约两次。
+
+    （2026-10 起 _busy_query 还多了一条"整间实验室"的占用判断，是 or 上去的，
+    不影响这里要守的这条：设备那半边仍然只认 equipment_id。）
     """
 
     def test_conflict_detected_after_equipment_moved_lab(

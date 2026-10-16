@@ -113,35 +113,67 @@ class TestOverlapBoundary:
         assert _count(db) == 2
 
 
-class TestLabAndEquipmentAreIndependent:
-    """刻意的设计：约设备和约整个实验室互不冲突，两边分开算。
+class TestLabAndEquipmentShareOccupancy:
+    """实验室和设备的占用是连着的。
 
+    2026-10 之前这里是反过来的（两者互不冲突），后来改成了互斥：
+    约了整间实验室，里面的设备此时段就约不了；约了某台设备，整间实验室此时段也算被占。
     这条规则写在 backend/data/kb/设备使用.md 里，是给用户的承诺，
-    所以要用测试固化下来，防止以后被人"顺手修掉"。
+    所以要用测试固化下来，防止以后被人"顺手改回去"。
     """
 
-    def test_equipment_booking_does_not_block_lab_booking(
+    def test_lab_booking_blocks_equipment_booking(
         self, db, make_user, make_lab, make_equipment, booking
     ):
-        user, lab = make_user(), make_lab()
-        eq = make_equipment(lab.id, name="RTX4090")
-        _book(db, user, booking(lab.id, equipment_id=eq.id))
-        _book(db, user, booking(lab.id, equipment_id=None))  # 约整间实验室
-        assert _count(db) == 2
-
-    def test_lab_booking_does_not_block_equipment_booking(
-        self, db, make_user, make_lab, make_equipment, booking
-    ):
+        """约了整间实验室 → 此时段实验室里的设备都约不了"""
         user, lab = make_user(), make_lab()
         eq = make_equipment(lab.id, name="RTX4090")
         _book(db, user, booking(lab.id, equipment_id=None))  # 先约整间实验室
+        with pytest.raises(BusinessException, match="实验室已被预约"):
+            _book(db, user, booking(lab.id, equipment_id=eq.id))
+        assert _count(db) == 1
+
+    def test_equipment_booking_blocks_lab_booking(
+        self, db, make_user, make_lab, make_equipment, booking
+    ):
+        """反过来：约了某台设备 → 整间实验室此时段也算被占"""
+        user, lab = make_user(), make_lab()
+        eq = make_equipment(lab.id, name="RTX4090")
         _book(db, user, booking(lab.id, equipment_id=eq.id))
+        with pytest.raises(BusinessException, match="实验室已被预约"):
+            _book(db, user, booking(lab.id, equipment_id=None))
+        assert _count(db) == 1
+
+    def test_time_overlap_counts(
+        self, db, make_user, make_lab, make_equipment, booking
+    ):
+        """比的是时间段重叠，不是起点相同：09:00-10:00 的实验室预约会挡住设备的 09:30-10:30"""
+        user, lab = make_user(), make_lab()
+        eq = make_equipment(lab.id, name="RTX4090")
+        _book(db, user, booking(lab.id, equipment_id=None, start_time="09:00", end_time="10:00"))
+        with pytest.raises(BusinessException, match="实验室已被预约"):
+            _book(
+                db,
+                user,
+                booking(lab.id, equipment_id=eq.id, start_time="09:30", end_time="10:30"),
+            )
+        assert _count(db) == 1
+
+    def test_other_lab_equipment_does_not_block(
+        self, db, make_user, make_lab, make_equipment, booking
+    ):
+        """别拦过头：另一间实验室的设备被约走，不影响本实验室整间预约"""
+        user = make_user()
+        lab_a, lab_b = make_lab(name="计算机实验室"), make_lab(name="电子实验室")
+        eq_b = make_equipment(lab_b.id, name="示波器")
+        _book(db, user, booking(lab_b.id, equipment_id=eq_b.id))
+        _book(db, user, booking(lab_a.id, equipment_id=None))
         assert _count(db) == 2
 
     def test_same_equipment_conflicts(
         self, db, make_user, make_lab, make_equipment, booking
     ):
-        """同一台设备、同一时段，才是真冲突"""
+        """同一台设备、同一时段，当然也是冲突"""
         user, lab = make_user(), make_lab()
         eq = make_equipment(lab.id, name="RTX4090")
         _book(db, user, booking(lab.id, equipment_id=eq.id, start_time="09:00", end_time="10:00"))
@@ -152,7 +184,10 @@ class TestLabAndEquipmentAreIndependent:
     def test_different_equipment_does_not_conflict(
         self, db, make_user, make_lab, make_equipment, booking
     ):
-        """同一间实验室里的两台不同设备，互不影响"""
+        """同一间实验室里的两台不同设备，互不影响。
+
+        这一条是**故意保留**的：要是约一台设备就把整间锁死，设备预约本身就没意义了。
+        """
         user, lab = make_user(), make_lab()
         eq1 = make_equipment(lab.id, name="RTX4090")
         eq2 = make_equipment(lab.id, name="示波器")
