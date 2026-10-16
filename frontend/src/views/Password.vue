@@ -1,5 +1,5 @@
 <template>
-  <div style="width: 50%">
+  <div class="settings-page">
     <el-card>
       <template #header>
         <div class="app-card-title">
@@ -11,7 +11,7 @@
         :rules="rules"
         :model="form"
         label-width="80px"
-        style="width: 100%; padding-right: 50px"
+        class="settings-form"
       >
         <el-form-item label="原密码" prop="oldPassword">
           <el-input
@@ -111,3 +111,27 @@ const handleSubmit = async () => {
   }
 }
 </script>
+
+<style scoped>
+/* 桌面端维持原来的样子：占内容区一半宽。 */
+.settings-page {
+  width: 50%;
+}
+/* 右边留一道白，免得输入框顶到卡片边缘 */
+.settings-form {
+  width: 100%;
+  padding-right: 50px;
+}
+
+/* 窄屏（断点跟 global.css 一致）。
+   原来宽度是写死的 50%：手机屏才 375px 宽，一半只有 180 多 px，
+   再扣掉 50px 右内边距，表单被挤成一条缝，几乎没法填。 */
+@media (max-width: 767px) {
+  .settings-page {
+    width: 100%;
+  }
+  .settings-form {
+    padding-right: 0;
+  }
+}
+</style>
