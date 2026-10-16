@@ -35,14 +35,14 @@ def _finish_step(steps: list, event: dict) -> None:
     for step in reversed(steps):
         if step["state"] == "running" and (not name or step["name"] == name):
             step["state"] = "done"
-            step["preview"] = event.get("preview") or ""
+            step["summary"] = event.get("summary") or ""
             return
     steps.append(
         {
             "name": name,
             "label": event.get("label") or name,
             "state": "done",
-            "preview": event.get("preview") or "",
+            "summary": event.get("summary") or "",
         }
     )
 
@@ -78,7 +78,7 @@ async def _event_stream(user_id: int, data: ChatRequest):
                         "name": event.get("name") or "",
                         "label": event.get("label") or event.get("name") or "",
                         "state": "running",
-                        "preview": "",
+                        "summary": "",
                     }
                 )
             elif etype == "tool_end":

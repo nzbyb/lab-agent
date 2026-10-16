@@ -41,7 +41,7 @@ def _fake_stream(*, text="你好", with_tool=True, tail_error=False):
                 "type": "tool_end",
                 "name": "get_today",
                 "label": "获取今天的日期",
-                "preview": "{}",
+                "summary": "今天是 2026-10-16 星期五，现在 16:47",
             }
         if tail_error:
             yield {"type": "error", "message": "大模型调用失败，请稍后重试"}

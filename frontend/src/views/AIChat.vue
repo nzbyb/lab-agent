@@ -113,21 +113,13 @@
                     <div class="trace-content">
                       <div class="trace-label">
                         <span>{{ step.label }}</span>
-                        <span v-if="previewSummary(step.preview)" class="trace-tag">
-                          {{ previewSummary(step.preview) }}
-                        </span>
                       </div>
-                      <!-- preview 是工具的返回值，一律走文本插值，绝不 v-html：
-                           它来自数据库内容，渲染成 HTML 就等于开了个注入口子。 -->
-                      <div
-                        v-if="step.preview"
-                        class="trace-preview"
-                        :class="{ 'is-expanded': step.expanded }"
-                        :title="step.expanded ? '点击收起' : '点击展开'"
-                        @click="step.expanded = !step.expanded"
-                      >
-                        {{ previewText(step.preview) }}
-                      </div>
+                      <!-- 这一步查到了什么，由后端翻成一句中文再送过来。
+                           工具的原始 JSON 不会到这儿——它满是英文键名和花括号，
+                           摆在界面上像漏出来一个调试面板。
+                           仍然一律走文本插值、绝不 v-html：里面可能带着用户
+                           自己填的名称。 -->
+                      <div v-if="step.summary" class="trace-result">{{ step.summary }}</div>
                     </div>
                   </div>
                 </div>
@@ -431,8 +423,7 @@ const toMessageItem = (row) => ({
   // 照抄的话，回看时这个步骤会永远转圈——页面上已经没有 SSE 再来把它改成已完成了。
   steps: (row.steps || []).map((step) => ({
     ...step,
-    state: 'done',
-    expanded: false
+    state: 'done'
   })),
   stepsOpen: false,
   stepsTouched: false,
@@ -650,8 +641,7 @@ const handleSend = async () => {
           name: evt.name || '',
           label,
           state: 'running',
-          preview: '',
-          expanded: false
+          summary: ''
         })
       } else if (evt.type === 'tool_end') {
         const label = evt.label || evt.name || '工具'
@@ -659,7 +649,7 @@ const handleSend = async () => {
         const step = findRunningStep(assistant.steps, evt.name)
         if (step) {
           step.state = 'done'
-          step.preview = evt.preview || ''
+          step.summary = evt.summary || ''
         } else {
           // 没配上（正常不该发生）也要把这一步记下来：
           // 宁可多显示一步，也不要让过程凭空少一段。
@@ -667,8 +657,7 @@ const handleSend = async () => {
             name: evt.name || '',
             label,
             state: 'done',
-            preview: evt.preview || '',
-            expanded: false
+            summary: evt.summary || ''
           })
         }
       } else if (evt.type === 'token') {
@@ -754,30 +743,7 @@ const isRunning = (item) => (item.steps || []).some((step) => step.state === 'ru
 // 收起时那一行摘要：去重后的工具名，如「检索实验室知识库 · 查询空闲时段」
 const stepSummary = (item) => [...new Set(item.steps.map((step) => step.label))].join(' · ')
 
-// preview 是工具返回值，多半是后端 json.dumps 出来的紧凑 JSON（工具都这么返回）。
-// 能解析就缩进后展示——读起来像一张表，而不是一长串挤在一起的字符。
-// 注意后端只截前 200 字符，超长的 JSON 必然解析失败，那就原样显示，不报错。
-const previewParsed = (preview) => {
-  if (!preview) return undefined
-  try {
-    return JSON.parse(preview)
-  } catch {
-    return undefined
-  }
-}
-
-const previewSummary = (preview) => {
-  const parsed = previewParsed(preview)
-  if (Array.isArray(parsed)) return `返回 ${parsed.length} 条`
-  if (parsed && typeof parsed === 'object') return `返回 ${Object.keys(parsed).length} 个字段`
-  return ''
-}
-
-const previewText = (preview) => {
-  const parsed = previewParsed(preview)
-  return parsed === undefined ? preview : JSON.stringify(parsed, null, 2)
-}
-
+// 助手正文按 Markdown 渲染，再过一遍 DOMPurify 消毒。
 const parseMarkdown = (text) => {
   if (!text) return ''
   const rawHtml = marked.parse(text).replace(/>\n</g, '><').trim()
@@ -1107,41 +1073,16 @@ const parseMarkdown = (text) => {
   line-height: 20px;
   color: var(--app-text-primary);
 }
-/* 「返回 N 条」这种一行摘要 */
-.trace-tag {
-  flex: 0 0 auto;
-  padding: 0 6px;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 16px;
-  color: var(--app-text-secondary);
-  background-color: #fff;
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-}
 
-/* 工具返回值：默认一行截断，点一下展开全文 */
-.trace-preview {
-  margin-top: 4px;
-  padding: 6px 8px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Courier New', monospace;
+/* 这一步查到了什么。后端翻好的一句中文，可能有点长，允许折行。
+   原来这里摆的是工具返回的原始 JSON（等宽字体 + 灰底 + 点击展开），
+   看上去像个调试面板，现在整块去掉了。 */
+.trace-result {
+  margin-top: 2px;
   font-size: 12px;
-  line-height: 1.5;
-  color: var(--app-text-primary);
-  background-color: #f6f8fa;
-  border: 1px solid var(--app-border);
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* 展开后换行显示，超过 280px 内部滚动，不把气泡顶得老长 */
-.trace-preview.is-expanded {
-  white-space: pre-wrap;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
   word-break: break-word;
-  max-height: 280px;
-  overflow: auto;
 }
 
 /* ---------------------------------------------------------------------------

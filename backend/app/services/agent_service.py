@@ -1,3 +1,4 @@
+import json
 import traceback
 from datetime import datetime
 from typing import Any
@@ -87,11 +88,100 @@ def _build_history(data: ChatRequest) -> list:
     return history[-_MAX_HISTORY_MESSAGES:]
 
 
-def _tool_output_preview(output: Any, limit: int = 200):
+def _tool_output_text(output: Any) -> str:
     if isinstance(output, ToolMessage):
         output = output.content
-    text = output if isinstance(output, str) else str(output)
-    return text if len(text) <= limit else text[:limit] + "..."
+    return output if isinstance(output, str) else str(output)
+
+
+# 摘要最多这么长，超了截断。纯粹是防意外：知识库原文、几十间实验室的名字
+# 都可能在一条里，界面上那行不该被它撑爆。
+_SUMMARY_MAX = 120
+
+# 列表类摘要最多列几个名字，剩下的用省略号带过
+_SUMMARY_NAMES = 4
+
+
+def _clip(text: str) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= _SUMMARY_MAX else text[: _SUMMARY_MAX - 1] + "…"
+
+
+def _name_list(rows: Any) -> str:
+    names = [
+        str(row.get("name") or "").strip()
+        for row in (rows or [])
+        if isinstance(row, dict)
+    ]
+    names = [name for name in names if name]
+    if not names:
+        return ""
+    head = "、".join(names[:_SUMMARY_NAMES])
+    return head + "…" if len(names) > _SUMMARY_NAMES else head
+
+
+def _slot_list(slots: Any) -> str:
+    return "、".join(
+        f"{item.get('start_time')}-{item.get('end_time')}"
+        for item in (slots or [])
+        if isinstance(item, dict)
+    )
+
+
+def _tool_summary(name: str, output: Any) -> str:
+    """把工具的返回值说成**一句人话**，给界面上的「执行过程」用。
+
+    工具的返回值是写给模型看的紧凑 JSON（键名全是英文），原样摆到界面上，
+    用户看到的是一串花括号，像是把一个调试面板漏了出来。所以同一份数据在这里
+    按工具名翻一遍，前端只显示这句话——**原始 JSON 不再往前端送**。
+
+    认不出来的工具（以后新加的、还没在这儿登记）返回空串，界面上只显示工具名，
+    不显示任何原始数据：宁可少一行，也别把 JSON 漏出去。
+    """
+    text = _tool_output_text(output).strip()
+
+    try:
+        data = json.loads(text)
+    except (TypeError, ValueError):
+        # search_lab_docs 回的是知识库原文，不是 JSON。取头一行当摘要。
+        first = next((line.strip(" #*-") for line in text.splitlines() if line.strip()), "")
+        return _clip(first)
+
+    if not isinstance(data, dict):
+        return ""
+    if data.get("ok") is False:
+        return _clip(f"失败：{data.get('error') or '操作失败'}")
+
+    if name == "get_today":
+        return f"今天是 {data.get('date')} {data.get('weekday')}，现在 {data.get('time')}"
+
+    if name == "list_labs":
+        total = data.get("total") or 0
+        if not total:
+            return "没有匹配的实验室"
+        return _clip(f"共 {total} 间：{_name_list(data.get('labs'))}")
+
+    if name == "list_lab_equipments":
+        total = data.get("total") or 0
+        if not total:
+            return "这间实验室没有匹配的设备"
+        return _clip(f"共 {total} 台：{_name_list(data.get('equipments'))}")
+
+    if name == "list_lab_free_slots":
+        who = data.get("equipment_name") or data.get("lab_name") or "实验室"
+        date = data.get("date") or ""
+        slots = data.get("free_slots") or []
+        if not slots:
+            return f"{who} {date} 已约满，没有空闲时段"
+        return _clip(f"{who} {date} 空闲 {len(slots)} 段：{_slot_list(slots)}")
+
+    if name == "create_lab_reservation":
+        return (
+            f"已提交预约：{data.get('date')} "
+            f"{data.get('start_time')}-{data.get('end_time')}，等待管理员审核"
+        )
+
+    return ""
 
 
 def _chunk_text(chunk: Any):
@@ -148,8 +238,10 @@ async def stream_agent(user_id: int, data: ChatRequest):
                     "type": "tool_end",
                     "name": name,
                     "label": TOOL_LABELS.get(name, name),
-                    "preview": _tool_output_preview(
-                        (event.get("data") or {}).get("output")
+                    # 一句中文结果，界面上「执行过程」那一步显示的就是它。
+                    # 工具的原始 JSON 只给模型看，不再往前端送（见 _tool_summary）。
+                    "summary": _tool_summary(
+                        name, (event.get("data") or {}).get("output")
                     ),
                 }
             elif kind == "on_chat_model_stream":
