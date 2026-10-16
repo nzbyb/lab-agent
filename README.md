@@ -198,6 +198,39 @@ bash scripts/init-demo.sh --username 你的账号名 --admin   # 灌演示数据
 `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` 生成——后端启动时会自检，
 太短或者用了模板里的示例值会直接拒绝启动。
 
+### 代码改完之后怎么更新线上
+
+```bash
+cd /opt/lab-agent
+git pull
+docker compose up -d --build
+docker compose ps
+```
+
+三条注意：
+
+- **必须带 `--build`**。代码是打进镜像里的，compose 里没有挂载源码目录，只 `restart`
+  等于跑的还是旧代码。构建期间网站照常能用（还是旧版容器），最后一刻换容器时会断几秒。
+- **别重跑 `scripts/init-demo.sh`**。它是首次部署时灌演示数据 + 建账号用的，重跑会把
+  演示数据冲掉。更新只做上面三条。
+- 前端会重新 `npm run build`，后端那两层装包的步骤只要 `requirements.txt` 没动就走缓存，
+  通常几秒到一两分钟（国内网络下第一次构建那十几分钟只会有一次）。
+
+更新完想确认拿到的是新版，可以查镜像里的文件，而不是靠刷浏览器：
+
+```bash
+docker compose exec -T backend grep -c "某个新函数名" /app/app/services/xxx.py
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/      # 期望 200
+```
+
+> 一个容易撞上的情况：如果 `git pull` 报
+> `error: Your local changes to the following files would be overwritten by merge`，
+> 说明**服务器上这几个文件被人手工改过**。别用 `git checkout --` 直接丢掉（可能丢掉有用的改动），
+> 先看差异 —— `git --no-pager diff --ignore-cr-at-eol origin/main -- <文件>`；
+> 忽略换行符后如果没有输出，就是只差换行符（服务器多半没设 `core.autocrlf`，
+> 而 Windows 上通常设了 `true`，同一份文件两边字节不同），这时用
+> `git stash push -m "..." -- <文件>` 把这几个文件先存起来再 pull，存起来的东西随时能拿回来。
+
 ### 国内网络下的三个坑
 
 这三条是在国内服务器上部署时真实撞到的，换个网络环境就都不存在：
