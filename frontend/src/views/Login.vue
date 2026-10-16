@@ -47,6 +47,11 @@
              （提交只走这两个 @keyup.enter。） -->
         <el-form ref="formRef" :rules="rules" :model="form" label-width="0px" class="login-form">
           <el-form-item prop="username">
+            <!-- autocapitalize / autocorrect / spellcheck 三条一起关掉。
+                 账号是**一字不差**比对的（后端 `User.username == 提交值`），而手机上的软键盘
+                 默认会把句首字母自动大写、还会"顺手纠正"拼写：`demo` 变成 `Demo`，登录就报
+                 "账号或密码错误"——报错和真实原因对不上，用户很难自己想明白。
+                 上面既然给了 name/autocomplete 让浏览器更愿意自动填充，这三条就更不能省。 -->
             <el-input
               size="large"
               v-model="form.username"
@@ -55,6 +60,9 @@
               autofocus
               name="username"
               autocomplete="username"
+              autocapitalize="off"
+              autocorrect="off"
+              spellcheck="false"
               @keyup.enter="login"
             />
           </el-form-item>
@@ -68,6 +76,8 @@
               show-password
               name="password"
               autocomplete="current-password"
+              autocapitalize="off"
+              autocorrect="off"
               @keyup.enter="login"
             />
           </el-form-item>
