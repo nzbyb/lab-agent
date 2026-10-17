@@ -36,7 +36,7 @@
 | 数据库 | MySQL；表结构由 Alembic 管（迁移在 `backend/migrations/`，服务启动时自动升到最新）。实验室开放时间分周中、周末两档，同一天用哪档由 `lab_service.resolve_open_hours` 一处判定 |
 | 鉴权 | JWT（PyJWT）+ bcrypt |
 | AI | LangGraph 编排工具调用、langchain-openai / langchain-core、ChromaDB + sentence-transformers + `BAAI/bge-small-zh-v1.5` 做本地向量检索 |
-| 限流 | slowapi |
+| 限流 | slowapi；计数默认存 Redis（Redis 不可用时退回进程内存，不会让接口报错） |
 
 ---
 
@@ -89,7 +89,8 @@ bash scripts/init-demo.sh --username 你的账号名 --admin
 - **数据在卷里**：`mysql-data`（数据库）和 `uploads`（用户上传的文件）。`docker compose down` 不丢，`down -v` 才清空。
 - **知识库索引没挂卷**，容器重建就会重做一遍。第一次要下 92MB 的 embedding 模型，缓存在仓库根的 `./.hf-cache/`（这个目录会保留，不会重复下）。
 - **改了代码要重新构建**：`docker compose up -d --build`。跟日志：`docker compose logs -f backend`。
-- **后端是单进程跑的**（没开 `--workers`）：限流计数器、知识库重建锁都在进程内存里，多开就各算各的。
+- **限流计数在 Redis 里**（`docker compose` 默认就配好，不用管）：多进程共用一份，**后端重启不清零**。Redis 挂了会退回进程内存继续限流，网站照常可用，`docker compose logs -f backend` 里能看到 `Rate limit storage unreachable`。
+- **后端是单进程跑的**（没开 `--workers`）：知识库重建锁这类东西还在进程内存里，多开就各算各的。
 - **容器用哪个时区由 `TZ` 决定**，默认 `Asia/Shanghai`。填错的话 AI 答"现在有哪些实验室开放"会整体偏八小时，界面上还看不出来。
 
 想在本机改代码，接着往下看。
@@ -178,7 +179,7 @@ npm run dev            # http://localhost:5173
 
 ### 机器怎么选
 
-- **内存给到 4G**。三个容器实测吃 1.2～1.6G，大头是向量模型和 MySQL；2G 会很紧。
+- **内存给到 4G**。四个容器实测吃 1.2～1.6G（Redis 那点计数几乎不占），大头是向量模型和 MySQL；2G 会很紧。
 - **带宽用"按使用流量"**（大陆 ¥0.8/GB，只算出方向，不走流量不收费）。开了 gzip、压过图之后，
   一个访客大约 0.6MB，一千人次不到一块钱，比"按固定带宽"买小水管划算得多。
 - **国内地域想用域名走 80/443，必须先 ICP 备案**（1～3 周）。不备案也能用，但只能
@@ -207,12 +208,22 @@ docker compose up -d --build
 docker compose ps
 ```
 
-三条注意：
+四条注意：
 
 - **必须带 `--build`**。代码是打进镜像里的，compose 里没有挂载源码目录，只 `restart`
   等于跑的还是旧代码。构建期间网站照常能用（还是旧版容器），最后一刻换容器时会断几秒。
+- **新增了基础镜像时，先在服务器上把它拉下来**。服务器连不通 Docker Hub，
+  镜像又不在本地的话，`up` 会卡在拉取那一步报错退出——**而旧容器照常跑，看着像更新成功了**。
+  先查再拉（以新增 Redis 那次为例）：
+
+  ```bash
+  docker images | grep -E 'redis' || true        # 没有输出 = 本地没有
+  docker pull public.ecr.aws/docker/library/redis:7-alpine
+  docker tag  public.ecr.aws/docker/library/redis:7-alpine redis:7-alpine
+  docker images | grep redis                     # 能看到 redis:7-alpine 再往下走
+  ```
 - **别重跑 `scripts/init-demo.sh`**。它是首次部署时灌演示数据 + 建账号用的，重跑会把
-  演示数据冲掉。更新只做上面三条。
+  演示数据冲掉。更新只做上面这些。
 - 前端会重新 `npm run build`，后端那两层装包的步骤只要 `requirements.txt` 没动就走缓存，
   通常几秒到一两分钟（国内网络下第一次构建那十几分钟只会有一次）。
 
@@ -244,8 +255,8 @@ docker pull public.ecr.aws/docker/library/python:3.11-slim
 docker tag  public.ecr.aws/docker/library/python:3.11-slim python:3.11-slim   # 打回原名字
 ```
 
-四个基础镜像（`python:3.11-slim`、`node:24-slim`、`mysql:8.4`、`nginx:alpine`）都这么处理一遍，
-`docker compose build` 就会直接用本地的，构建脚本一个字都不用改。
+五个基础镜像（`python:3.11-slim`、`node:24-slim`、`mysql:8.4`、`nginx:alpine`、`redis:7-alpine`）都这么处理一遍，
+`docker compose build` / `up` 就会直接用本地的，构建脚本一个字都不用改。
 
 **2. pip 源不通、PyTorch 源慢到没法用。** 官方 PyPI 连不上，`download.pytorch.org` 实测只有
 16 KB/s（torch 的 CPU 版有 200 多兆，这个速度得下几个小时）。所以 `backend/Dockerfile` 把 pip 源
@@ -378,7 +389,7 @@ body 里的 `code` 有一套约定，照着它就能分清"这次请求哪里不
 
 ## 已知限制
 
-- **限流是内存计数器，只在单进程下准。** uvicorn 开多 worker 时每个进程各算各的，实际额度翻倍；要精确得换 Redis。
+- **限流计数在 Redis（Docker 部署默认如此）**，多进程/多实例共用一份，**后端**重启不清零。注意 Redis 容器或整机重启会清零——计数刻意不落盘（没有挂卷、关了 RDB/AOF），因为丢了最坏只是重置一分钟的额度。代价是多了一个要维护的容器；Redis 挂了会退回各进程自己的内存计数——网站照常可用，但那段多实例部署时会变成"每台各算一份"。
 - **下线是"一锅端"，踢不了单独某一台设备。** 改密码让该用户**全部**旧令牌失效，做不到"只踢被盗的那一台、保留其他设备"。要精确到单枚令牌得引入会话表，那是另一件事。
 - **登出只清浏览器，不通知后端。** 没有 logout 接口，退出登录就是删掉本地令牌，那枚令牌在过期前（默认 24 小时）仍然有效。想让它立刻作废只能改密码。
 - **迁移在服务启动时执行，假设单进程。** uvicorn 开多 worker 时每个进程都会跑一遍，并发 DDL 会撞车；要让多 worker 同时启动，得把 `run_migrations()` 从 lifespan 挪到部署流程里单独执行，或者用 MySQL 的 `GET_LOCK` 包一层（`reservation_service` 里已有现成用法）。

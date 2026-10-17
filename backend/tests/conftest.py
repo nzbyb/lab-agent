@@ -45,6 +45,14 @@ if not (_test_url.database or "").endswith("_test"):
 
 os.environ["DATABASE_URL"] = _test_url.render_as_string(hide_password=False)
 
+# 限流计数强制走内存，测试绝不能连到线上 Redis：
+# 下面那个 _reset_rate_limiter 每个用例都会调 limiter.reset()，而 Redis 后端的
+# reset() 会删掉整个库里的限流键——不丢业务数据，但会让线上限流短暂失效。
+# 想验证 Redis 那条路，用单独的用例自己造 limiter（见 test_limiter_storage.py）。
+os.environ["REDIS_URL"] = ""
+# slowapi 在不传 storage_uri 时会去读这个变量；留着它等于给上面那句开了个后门。
+os.environ.pop("RATELIMIT_STORAGE_URL", None)
+
 # ---------------------------------------------------------------------------
 # 以上必须早于以下所有 import
 # ---------------------------------------------------------------------------
@@ -71,7 +79,24 @@ if not (engine.url.database or "").endswith("_test"):
         "（多半是被 import 得太早，DATABASE_URL 覆盖没赶上 create_engine）"
     )
 
+from limits.storage import MemoryStorage  # noqa: E402
+
 from app.limiter import limiter  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# 第二道保险丝（限流版）：查 limiter **真正**用的存储，而不是我们以为的。
+#
+# 上面那两句 os.environ 覆盖跟数据库那条一样，只是"我们以为"：如果 app.limiter
+# 被更早地 import 过（`pytest -p <插件>`），或者环境里另设了 RATELIMIT_STORAGE_URL，
+# limiter 可能已经连上了别的 Redis。而下面的 _reset_rate_limiter 每个用例都会
+# reset()，Redis 后端的 reset() 会删掉那个库里的限流键。
+# ---------------------------------------------------------------------------
+if not isinstance(limiter._storage, MemoryStorage):
+    raise RuntimeError(
+        f"限流器实际用的是 {type(limiter._storage).__name__}，不是内存存储，拒绝运行测试。"
+        "（多半是 REDIS_URL / RATELIMIT_STORAGE_URL 被设上了）"
+    )
+
 from app.main import app  # noqa: E402
 from app.models.equipment import Equipment  # noqa: E402
 from app.models.lab import Lab  # noqa: E402

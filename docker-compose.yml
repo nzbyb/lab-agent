@@ -1,5 +1,5 @@
 # ============================================================
-# 智能实验室预约系统 —— 三件套一键起：MySQL + 后端 + 前端
+# 智能实验室预约系统 —— 四件套一键起：MySQL + Redis + 后端 + 前端
 #
 # 起之前先做两件事：
 #   1) cp .env.example .env   然后把里面的值填上
@@ -69,6 +69,30 @@ services:
       start_period: 30s
 
   # ------------------------------------------------------------
+  # 限流计数器
+  #
+  # 只存限流计数，丢了不影响业务（最坏是额度临时重置），所以不挂卷、
+  # 关掉持久化，也不对外开端口——只有 compose 网络里的 backend 能访问。
+  #
+  # ⚠️ 服务器上 Docker Hub 连不上时，这个镜像从 public.ecr.aws 拉再改名，
+  #    做法见 README「国内网络下的三个坑」（跟 python/node 镜像是同一招）。
+  # ------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # --save "" 关掉 RDB 快照，--appendonly no 关掉 AOF：计数本来就不需要持久化
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      # 只是观察用：`docker compose ps` 里能看到 healthy / unhealthy。
+      # 它**不参与任何决策**——backend 不等它（见下面的 depends_on），
+      # Docker 也不会因为 unhealthy 去重启容器（restart 只看进程退没退出）。
+      # Redis "进程在但不回话"时不会自愈，只会降级成进程内存计数。
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ------------------------------------------------------------
   # 后端
   # ------------------------------------------------------------
   backend:
@@ -85,6 +109,14 @@ services:
       mysql:
         # 等到 healthcheck 通过才启动，不是"容器起来了"就算
         condition: service_healthy
+      redis:
+        # 只等它"启动"，不等 healthy。
+        #
+        # 运行期：Redis 之后挂掉不影响后端，限流退回进程内存继续生效（见 app/limiter.py）。
+        # 部署时：这仍然是**硬依赖**——Redis 容器起不来的话 `up` 会整体报错退出，
+        # 新的 backend 不会换上去（旧容器继续跑，看着像更新成功了）。
+        # 所以新增镜像要先在服务器上拉好，见 README「代码改完之后怎么更新线上」。
+        condition: service_started
     environment:
       # 容器之间用**服务名**互找，所以主机名写 mysql，不是 127.0.0.1
       # —— 容器里的 127.0.0.1 指的是后端容器自己，那儿没有数据库。
@@ -104,6 +136,11 @@ services:
       # 前后端同源（都在 8080，nginx 反代），浏览器不发跨域请求，
       # 所以这里留空完全没问题。开发时本机 npm run dev 才需要它。
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+
+      # 限流计数放 Redis：多进程/多实例共用一份，重启容器也不清零。
+      # Redis 挂了后端照常跑，限流退回进程内存继续生效（见 backend/app/limiter.py）。
+      # 容器之间用服务名互找，所以主机名是 redis，不是 127.0.0.1。
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
 
       # 必须和后端 Dockerfile 里那个 ARG TZ 一致，否则改了这边不生效
       TZ: ${TZ:-Asia/Shanghai}

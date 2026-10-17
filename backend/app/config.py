@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     # 写成 a,b 会直接报错，只有 ["a","b"] 才认——让它自己 split 更好用。
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
+    # 限流计数存哪儿。留空 = 用进程内存（本机直接跑 uvicorn、跑测试都是这种）。
+    # Docker 部署时 docker-compose.yml 会注入 redis://redis:6379/0。
+    # 见 app/limiter.py：Redis 连不上时会退回进程内存继续限流，不会报 500。
+    REDIS_URL: str = ""
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env", env_file_encoding="utf-8"
     )

@@ -16,3 +16,5 @@ langchain-openai==1.6.7
 langchain-core==1.6.6
 slowapi==0.1.10
 limits==5.8.0
+# limits 的 Redis 存储后端要用它（版本的上下限由 limits 自己卡：>3,<8）
+redis==5.2.1
