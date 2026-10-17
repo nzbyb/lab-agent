@@ -136,6 +136,14 @@
       "note": "已拒绝的预约不能取消"
     },
     {
+      "id": "approved-cannot-cancel",
+      "now": "2026-10-19T10:00:00",
+      "question": "已经审核通过的预约还能取消吗？",
+      "must_contain_any": [["不能", "不可以", "无法"]],
+      "must_not_contain": [],
+      "note": "cancel_reservation 只允许 status=0（待审核），知识库原文以前写成「已通过也能取消」，已改"
+    },
+    {
       "id": "whole-lab-blocks-equipment",
       "now": "2026-10-19T10:00:00",
       "question": "这个时段已经约了整间实验室，还能再约这间实验室里的某台设备吗？",

@@ -366,14 +366,14 @@ MySQL 和 Redis 在同一台。2026-10-17 用 `scripts/bench.py` 对着 `http://
 
 ### AI 评测集
 
-`backend/scripts/eval_questions.json` 里有 20 道题，分四类：开放时间（周中、周六、深夜三套时钟）、
+`backend/scripts/eval_questions.json` 里有 21 道题，分四类：开放时间（周中、周六、深夜三套时钟）、
 预约规则、设备与安全规范、以及必须查库才能答对的事实（几间实验室、容量、位置、某台设备在哪）。
 `backend/scripts/eval_agent.py` 逐题调用真实 Agent，按关键词判分，并把每道题的完整回答写进 JSON 报告。
 
 ```bash
 cd backend
 python scripts/eval_agent.py --list                  # 只看题目，不花钱
-python scripts/eval_agent.py                         # 跑全部 20 题
+python scripts/eval_agent.py                         # 跑全部 21 题
 python scripts/eval_agent.py --only open-saturday    # 调试单题
 ```
 
@@ -382,10 +382,10 @@ python scripts/eval_agent.py --only open-saturday    # 调试单题
 固定时刻的实现，每道题自带 `now`。脚本也只肯连本机数据库——题目绑定的是 `demo_data.sql` 的数据，
 连到线上库这些数字全变，测了也没意义。
 
-**2026-10-17 实测：20/20 通过**（模型 `deepseek-flash`，本机开发库，8 间实验室的那套数据）。
+**2026-10-17 实测：21/21 通过**（模型 `deepseek-flash`，本机开发库，8 间实验室的那套数据）。
 
 判分靠关键词，局限是「答对了但换了说法」也会判错，所以失败项要人眼看原文；反过来，题目本身也可能偏容易。
-它真正守的是**回归**：改完提示词或工具之后，这 20 道题的结论不能变。
+它真正守的是**回归**：改完提示词或工具之后，这 21 道题的结论不能变。
 
 ---
 
