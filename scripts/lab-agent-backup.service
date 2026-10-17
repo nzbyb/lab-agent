@@ -1,0 +1,28 @@
+# 每天凌晨 3:20 跑一次数据库备份。
+#
+# 安装（服务器上，仓库在 /opt/lab-agent）：
+#   sudo cp scripts/lab-agent-backup.service scripts/lab-agent-backup.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now lab-agent-backup.timer
+#   sudo systemctl list-timers lab-agent-backup.timer     # 看下一次什么时候跑
+#
+# 手动先跑一次、确认真能出文件：
+#   sudo /opt/lab-agent/scripts/backup-db.sh
+#   ls -lh /opt/lab-agent/backups/
+#
+# 看历史运行结果：
+#   systemctl status lab-agent-backup.service
+#   journalctl -u lab-agent-backup.service -n 50
+#
+# 注意：这个 service 假设仓库就在 /opt/lab-agent。换个目录的话，
+# 这里和下面 .timer 都不用改，要改的是 .service 里的 WorkingDirectory 和 ExecStart。
+
+[Unit]
+Description=备份 lab-agent 的 MySQL 数据库
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/lab-agent
+ExecStart=/opt/lab-agent/scripts/backup-db.sh

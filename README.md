@@ -293,6 +293,67 @@ docker compose run --rm -e HF_ENDPOINT=https://hf-mirror.com backend \
 
 两处加起来，首屏从约 2.2 MB 降到约 0.6 MB。
 
+### 数据库备份
+
+线上每天凌晨 3:20 自动导出一份 MySQL，保留最近 7 天，文件在服务器的 `/opt/lab-agent/backups/`，
+文件名形如 `lab_agent-20261017-032015.sql.gz`。用 systemd timer 而不是 cron：精简的云镜像不一定装了
+cron，systemd 一定有，还自带 `journalctl` 日志和「错过了就开机后补跑」。
+
+装到服务器上（仓库在 `/opt/lab-agent`）：
+
+```bash
+cd /opt/lab-agent
+sudo cp scripts/lab-agent-backup.service scripts/lab-agent-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now lab-agent-backup.timer
+sudo systemctl list-timers lab-agent-backup.timer      # 看下一次什么时候跑
+```
+
+先手动跑一次，确认真能出文件——**以 `ls` 看到的文件为准，不以脚本说「完成」为准**：
+
+```bash
+sudo /opt/lab-agent/scripts/backup-db.sh
+ls -lh /opt/lab-agent/backups/
+```
+
+脚本里不含密码：`mysqldump` 跑在 mysql 容器**里面**，直接读容器自己的 `$MYSQL_ROOT_PASSWORD`，
+所以这个文件可以公开，命令行历史和进程列表里也看不到口令。导出先写 `.part`，校验大小和 gzip 完整性
+之后才改名，所以中途失败的半个文件不会冒充「最近一份备份」；`set -o pipefail` 保证 mysqldump 失败
+不会被 gzip 的成功退出码盖住。
+
+恢复（**先把目标库清空再导入**）：
+
+```bash
+gunzip < backups/lab_agent-20261017-032015.sql.gz | docker compose exec -T mysql sh -c \
+  'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 lab_agent'
+```
+
+**局限要说清楚**：备份和数据库在同一台机器上，能救「误删库、某张表写坏了」，救不了「整台服务器没了」。
+建议每周从服务器下载一份到自己的电脑。
+
+### AI 评测集
+
+`backend/scripts/eval_questions.json` 里有 20 道题，分四类：开放时间（周中、周六、深夜三套时钟）、
+预约规则、设备与安全规范、以及必须查库才能答对的事实（几间实验室、容量、位置、某台设备在哪）。
+`backend/scripts/eval_agent.py` 逐题调用真实 Agent，按关键词判分，并把每道题的完整回答写进 JSON 报告。
+
+```bash
+cd backend
+python scripts/eval_agent.py --list                  # 只看题目，不花钱
+python scripts/eval_agent.py                         # 跑全部 20 题
+python scripts/eval_agent.py --only open-saturday    # 调试单题
+```
+
+开放时间这几题必须钉死时钟：不钉的话「现在有哪些实验室开放」每天答案都不同，没法复现。脚本在跑之前
+把 `agent_service.datetime`、`agent_tools.datetime`、`lab_service._now` 三处读时钟的地方换成一个返回
+固定时刻的实现，每道题自带 `now`。脚本也只肯连本机数据库——题目绑定的是 `demo_data.sql` 的数据，
+连到线上库这些数字全变，测了也没意义。
+
+**2026-10-17 实测：20/20 通过**（模型 `deepseek-flash`，本机开发库，8 间实验室的那套数据）。
+
+判分靠关键词，局限是「答对了但换了说法」也会判错，所以失败项要人眼看原文；反过来，题目本身也可能偏容易。
+它真正守的是**回归**：改完提示词或工具之后，这 20 道题的结论不能变。
+
 ---
 
 ## 测试
@@ -341,7 +402,7 @@ backend/
   migrations/      Alembic 迁移，表结构的每一次变更都落在这里
   tests/           228 条用例
   demo_data.sql    实验室 / 设备基础数据
-  scripts/         演示预约数据生成
+  scripts/         演示预约数据生成、AI 评测集（eval_agent.py + eval_questions.json）
   Dockerfile
 frontend/
   src/
@@ -355,6 +416,8 @@ frontend/
   nginx.conf       静态文件 + 反代 /api、/uploads
 scripts/
   init-demo.sh     一键初始化：灌数据 + 注册账号 + 造演示预约
+  backup-db.sh     导出 MySQL 到 backups/（配合同目录的 systemd timer，每天 3:20）
+  bench.py         只读接口压测，只依赖标准库
 docs/              图标和界面截图
 docker-compose.yml MySQL + 后端 + 前端
 ```

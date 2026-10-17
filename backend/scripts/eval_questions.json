@@ -1,0 +1,179 @@
+{
+  "_说明": [
+    "AI 评测题库。用 scripts/eval_agent.py 跑，答案按关键词判对错。",
+    "判分规则：must_contain_any 里每一组都必须至少命中一个词（组内是「或」）；",
+    "must_not_contain 里任何一个词出现就算错。比较前会去掉所有空白、转小写。",
+    "now 是这一题要钉死的「当前时间」，用来测开放时间这类跟几点有关的问题。",
+    "题目和数据绑定：8 间实验室、计算机实验室 40 人 / 综合实验楼 201、",
+    "RTX4090 在计算机实验室（2 块）——这些是 backend/demo_data.sql 里的事实。"
+  ],
+  "questions": [
+    {
+      "id": "open-monday-all",
+      "now": "2026-10-19T10:00:00",
+      "question": "现在有哪些实验室开放？",
+      "must_contain_any": [["8间", "八间", "8个", "八个", "全部", "所有", "都开放"]],
+      "must_not_contain": ["全部不开放", "都关闭", "都不开放"],
+      "note": "周一 10:00，8 间全在时段内"
+    },
+    {
+      "id": "open-saturday",
+      "now": "2026-10-17T10:00:00",
+      "question": "今天是周六，现在有哪些实验室开放？",
+      "must_contain_any": [["计算机实验室"], ["物理实验室"]],
+      "must_not_contain": [
+        "化学实验室开放",
+        "电子实验室开放",
+        "生物实验室开放",
+        "人工智能实验室开放",
+        "机器人实验室开放",
+        "软件工程实验室开放"
+      ],
+      "note": "周六 10:00，只有计算机（09-17）和物理（08-18）开门"
+    },
+    {
+      "id": "saturday-chem-booking",
+      "now": "2026-10-17T10:00:00",
+      "question": "周六能预约化学实验室吗？",
+      "must_contain_any": [["不能", "不可以", "无法", "约不了", "不开放", "关闭"]],
+      "must_not_contain": [],
+      "note": "化学实验室周末不开放"
+    },
+    {
+      "id": "friday-night-closed",
+      "now": "2026-10-16T21:00:00",
+      "question": "现在是周五晚上 9 点，还有实验室开放吗？",
+      "must_contain_any": [["没有", "都关", "都闭", "全部关闭", "均已关闭", "不开放"]],
+      "must_not_contain": ["计算机实验室还开着"],
+      "note": "最晚的一间 20:00 关门，21:00 全部闭馆"
+    },
+    {
+      "id": "lab1-hours",
+      "now": "2026-10-19T10:00:00",
+      "question": "计算机实验室的开放时间是什么？",
+      "must_contain_any": [["08:00", "8:00", "8点"], ["20:00", "20点", "晚上8点"]],
+      "must_not_contain": [],
+      "note": "周中 08:00-20:00；周末 09:00-17:00"
+    },
+    {
+      "id": "robot-opening-hour",
+      "now": "2026-10-19T10:00:00",
+      "question": "机器人实验室几点开门？",
+      "must_contain_any": [["09:00", "9:00", "9点"]],
+      "must_not_contain": [],
+      "note": "周中 09:00-17:00"
+    },
+    {
+      "id": "software-weekend",
+      "now": "2026-10-17T10:00:00",
+      "question": "软件工程实验室周末开放吗？",
+      "must_contain_any": [["不开放", "关闭", "不营业", "不能"]],
+      "must_not_contain": [],
+      "note": "软件工程实验室周末不开放"
+    },
+    {
+      "id": "lab-count",
+      "now": "2026-10-19T10:00:00",
+      "question": "学校一共有几间实验室？",
+      "must_contain_any": [["8间", "八间", "8个", "八个"]],
+      "must_not_contain": ["7间", "9间", "10间"],
+      "note": "库里有 8 间"
+    },
+    {
+      "id": "lab1-capacity",
+      "now": "2026-10-19T10:00:00",
+      "question": "计算机实验室最多能容纳多少人？",
+      "must_contain_any": [["40"]],
+      "must_not_contain": [],
+      "note": "capacity=40"
+    },
+    {
+      "id": "lab1-location",
+      "now": "2026-10-19T10:00:00",
+      "question": "计算机实验室在哪个楼？",
+      "must_contain_any": [["综合实验楼201", "综合实验楼2楼201", "实验楼201"]],
+      "must_not_contain": [],
+      "note": "location=综合实验楼201"
+    },
+    {
+      "id": "rtx-location",
+      "now": "2026-10-19T10:00:00",
+      "question": "哪间实验室有 RTX4090？",
+      "must_contain_any": [["计算机实验室"], ["2块", "2张", "2台", "两块", "两张", "两台"]],
+      "must_not_contain": [],
+      "note": "RTX4090 在计算机实验室，数量 2"
+    },
+    {
+      "id": "microscope-count",
+      "now": "2026-10-19T10:00:00",
+      "question": "生物实验室有几台显微镜？",
+      "must_contain_any": [["10", "十"]],
+      "must_not_contain": [],
+      "note": "显微镜数量 10"
+    },
+    {
+      "id": "ai-lab-equipment",
+      "now": "2026-10-19T10:00:00",
+      "question": "人工智能实验室有哪些设备？",
+      "must_contain_any": [["训练服务器", "GPU服务器"], ["深度相机"], ["标注工作站"]],
+      "must_not_contain": [],
+      "note": "GPU 训练服务器 / 深度学习训练显卡 / 深度相机 / 标注工作站"
+    },
+    {
+      "id": "booking-needs-approval",
+      "now": "2026-10-19T10:00:00",
+      "question": "预约提交后能直接去用吗？",
+      "must_contain_any": [["审核"], ["通过", "批准"]],
+      "must_not_contain": [],
+      "note": "先待审核，管理员通过后才能用"
+    },
+    {
+      "id": "rejected-cannot-cancel",
+      "now": "2026-10-19T10:00:00",
+      "question": "已经被拒绝的预约还能取消吗？",
+      "must_contain_any": [["不能", "不可以", "无法"]],
+      "must_not_contain": [],
+      "note": "已拒绝的预约不能取消"
+    },
+    {
+      "id": "whole-lab-blocks-equipment",
+      "now": "2026-10-19T10:00:00",
+      "question": "这个时段已经约了整间实验室，还能再约这间实验室里的某台设备吗？",
+      "must_contain_any": [["不能", "不可以", "约不了", "无法"]],
+      "must_not_contain": [],
+      "note": "约整间就占用全部设备；只有同间实验室的两台不同设备互不影响"
+    },
+    {
+      "id": "chem-goggles",
+      "now": "2026-10-19T10:00:00",
+      "question": "进化学实验室需要戴护目镜吗？",
+      "must_contain_any": [["护目镜", "护目"]],
+      "must_not_contain": ["不需要", "不用戴"],
+      "note": "化学实验室须戴护目镜"
+    },
+    {
+      "id": "no-snacks-in-chem",
+      "now": "2026-10-19T10:00:00",
+      "question": "能把零食带进化学实验室吗？",
+      "must_contain_any": [["不能", "禁止", "不允许", "不可以"]],
+      "must_not_contain": [],
+      "note": "禁止把零食带进化学实验室"
+    },
+    {
+      "id": "broken-equipment",
+      "now": "2026-10-19T10:00:00",
+      "question": "设备坏了应该怎么办？",
+      "must_contain_any": [["停用"], ["管理员"]],
+      "must_not_contain": [],
+      "note": "立即停用并联系管理员，不要自行拆修"
+    },
+    {
+      "id": "leave-checklist",
+      "now": "2026-10-19T10:00:00",
+      "question": "离开实验室前要做什么？",
+      "must_contain_any": [["电源"], ["台面", "清理"]],
+      "must_not_contain": [],
+      "note": "关电源、关水源、清理台面"
+    }
+  ]
+}

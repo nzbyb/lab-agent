@@ -48,6 +48,14 @@ lerna-debug.log*
 backend/uploads/
 backend/data/chroma/
 
+# 数据库备份（scripts/backup-db.sh 的输出）。里面是整个库的明文数据，
+# 包含用户、预约等真实内容，绝不可进这个公开仓库。
+backups/
+
+# AI 评测的报告（scripts/eval_agent.py 的输出）。每跑一次都会变，
+# 没有入库价值；README 里只写"日期 + 模型 + 通过数"。
+backend/scripts/eval_report.json
+
 # docker compose 默认把 embedding 模型缓存在这里（见 docker-compose.yml 的
 # HF_CACHE_DIR）。第一次跑会下 92MB 进来，不该进仓库。
 .hf-cache/

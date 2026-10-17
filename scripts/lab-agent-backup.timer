@@ -1,0 +1,19 @@
+# 每天 3:20 触发一次备份（见同目录的 lab-agent-backup.service）。
+#
+# 为什么用 systemd timer 而不是 cron：Ubuntu 云镜像是精简安装，
+# `cron` 不一定装了；systemd 一定在，而且它自带日志（journalctl）和
+# "开机后补跑"（Persistent=true）——机器凌晨关机了，开机后会补上这一次。
+#
+# RandomizedDelaySec 让触发时间散开一点，避免整点时刻一堆定时任务同时醒。
+# 对一台机器没区别，但这是写定时任务的常规做法。
+
+[Unit]
+Description=每天跑一次 lab-agent 数据库备份
+
+[Timer]
+OnCalendar=*-*-* 03:20:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
