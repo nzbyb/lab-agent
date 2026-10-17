@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # 见 app/limiter.py：Redis 连不上时会退回进程内存继续限流，不会报 500。
     REDIS_URL: str = ""
 
+    # 同时进行的 AI 对话数上限。每次对话要占住一条流式连接，还要在本机跑一次
+    # 向量检索，2C4G 的机器上开太多会互相拖慢。超过上限的新请求直接回一句
+    # "稍后再试"，不排队——排队只会把连接和内存继续占着。
+    AI_MAX_CONCURRENCY: int = 3
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env", env_file_encoding="utf-8"
     )

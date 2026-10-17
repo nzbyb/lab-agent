@@ -21,8 +21,12 @@ slowapi 的警告会被它自己挂的"黑洞" handler 吃掉，`docker compose 
 
 import logging
 
+from fastapi import Request
+from limits import parse as parse_limit
 from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from slowapi.wrappers import Limit as SlowapiLimit
 
 from app.config import settings
 
@@ -90,3 +94,61 @@ def _enable_slowapi_logs() -> None:
 
 limiter = build_limiter(settings.REDIS_URL)
 _enable_slowapi_logs()
+
+
+# ---------------------------------------------------------------------------
+# 登录：按「IP + 账号」限流
+#
+# 为什么不能只靠装饰器：slowapi 的 key_func 只拿得到 Request，拿不到已经解析好的
+# 请求体，所以"用户名"这一维只能在路由里、解析完 body 之后自己查。
+#
+# 为什么 key 里要带 IP：只按账号算的话，别人拿你的账号名连输 5 次错密码，
+# 就能把你锁在门外一分钟。带上 IP 之后，每个人只影响自己所在的那一条。
+#
+# 额度仍然是 5 次/分钟。装饰器那条改成 60 次/分钟是**另一个维度**的兜底：
+# 挡住同一个 IP 换着账号撞库；给得宽是因为校园网、公司网几十个人共用一个出口 IP。
+# ---------------------------------------------------------------------------
+LOGIN_ACCOUNT_LIMIT_ITEM = parse_limit("5/minute")
+LOGIN_ACCOUNT_SCOPE = "login_account"
+
+# 只为构造 RateLimitExceeded 用（它要一个 slowapi 的 Limit 包装对象，
+# 好让 429 处理器和装饰器触发时走同一条路、算同样的 Retry-After）。
+_ACCOUNT_LIMIT = SlowapiLimit(
+    limit=LOGIN_ACCOUNT_LIMIT_ITEM,
+    key_func=get_remote_address,
+    scope=LOGIN_ACCOUNT_SCOPE,
+    per_method=False,
+    methods=None,
+    error_message=None,
+    exempt_when=None,
+    cost=1,
+    override_defaults=True,
+)
+
+
+def enforce_login_account_limit(request: Request, username: str) -> None:
+    """按 IP + 账号计数，额度用完抛 RateLimitExceeded。
+
+    账号名先去掉首尾空白再转小写：MySQL 的比较本来就忽略大小写和尾空格，
+    不归一化的话，换个大小写就是一个新桶，这条限制就形同虚设。
+    """
+    ip = get_remote_address(request)
+    key = f"{ip}:{username.strip().lower() or '-'}"
+
+    try:
+        allowed = limiter.limiter.hit(
+            LOGIN_ACCOUNT_LIMIT_ITEM, key, LOGIN_ACCOUNT_SCOPE
+        )
+    except Exception:
+        # 存储出错时放行，跟全局策略一致：限流自己挂了不能把登录变成 500。
+        # （装饰器那条会在同一时刻发现存储不可用，打日志并切到内存计数。）
+        return
+
+    if not allowed:
+        # 记下这次是哪条额度用完了——429 处理器靠它算出 "请 N 秒后再试"。
+        # 格式跟 slowapi 自己攒的 (额度, [key, scope]) 一致。
+        request.state.view_rate_limit = (
+            LOGIN_ACCOUNT_LIMIT_ITEM,
+            [key, LOGIN_ACCOUNT_SCOPE],
+        )
+        raise RateLimitExceeded(_ACCOUNT_LIMIT)

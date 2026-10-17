@@ -4,7 +4,7 @@ from app.schemas.auth import RegisterRequest
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.common.response import Response
-from app.limiter import limiter
+from app.limiter import enforce_login_account_limit, limiter
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["权限验证"])
@@ -14,8 +14,14 @@ router = APIRouter(prefix="/auth", tags=["权限验证"])
 # 不加限制的话既能无限撞库，又能拿单请求约 180ms 的 CPU 开销把服务打满。
 # 注意：slowapi 要求在签名里有个名字正好是 request 的参数，别改名。
 @router.post("/login")
-@limiter.limit("5/minute")
+@limiter.limit("60/minute")
 def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
+    # 真正管"一个账号被反复试密码"的是下面这条：5 次/分钟，按 IP + 账号。
+    # 上面那个 60/分钟是按 IP 的兜底，挡"同一个 IP 换着账号撞库"；
+    # 额度给得宽，是因为校园网、公司网几十个人共用一个出口 IP，
+    # 按 IP 卡太紧会把一群互不相干的人一起锁住——这正是要修的"被误伤"。
+    enforce_login_account_limit(request, data.username)
+
     result = auth_service.login(db, data)
 
     return Response.success(

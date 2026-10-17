@@ -1,3 +1,6 @@
+import math
+import time
+
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -52,18 +55,50 @@ async def validation_exception_hadler(request: Request, exc: RequestValidationEr
     )
 
 
+def _retry_after_seconds(request: Request, exc: RateLimitExceeded) -> int:
+    """这枚额度还要多少秒才恢复。
+
+    优先问存储要精确的重置时刻（slowapi 在触发限流前会把「是哪条额度、按什么 key
+    算的」放在 request.state.view_rate_limit 里）；问不到就退回额度的整窗长度。
+    两个都拿不到时给 60 秒——比让小气地报 1 秒、结果一重试又 429 好。
+    """
+    view = getattr(request.state, "view_rate_limit", None)
+    if view:
+        try:
+            item, identifiers = view
+            app_limiter = getattr(request.app.state, "limiter", None)
+            stats = app_limiter.limiter.get_window_stats(item, *identifiers)
+            return max(1, math.ceil(stats.reset_time - time.time()))
+        except Exception:
+            pass
+
+    # exc.limit 是 slowapi 的 Limit 包装，里面那个才是 limits 的额度对象
+    limit = getattr(exc, "limit", None)
+    limit = getattr(limit, "limit", limit)
+    try:
+        return max(1, int(limit.get_expiry()))
+    except Exception:
+        return 60
+
+
 async def rate_limit_exception_hadler(request: Request, exc: RateLimitExceeded):
     """限流触发。
 
     这里是全项目唯一用 HTTP 429 而不是 200 的地方，故意的：
     限流是基础设施层面的信号，得让反向代理和监控按状态码就直接认出来，
     不能塞进 body.code 里等着谁去解包。
+
+    还要带上 `Retry-After`（秒）：没有它，前端只能干巴巴地说"太频繁了"，
+    用户不知道等三秒还是等一分钟，最容易的做法就是立刻再点——继续吃 429。
+    body 里的提示也把秒数写出来，前端两个地方都能直接显示。
     """
+    retry_after = _retry_after_seconds(request, exc)
     return JSONResponse(
         status_code=429,
         content=Response.error(
-            code=429, message="操作过于频繁，请稍后再试"
+            code=429, message=f"操作过于频繁，请 {retry_after} 秒后再试"
         ).model_dump(),
+        headers={"Retry-After": str(retry_after)},
     )
 
 
