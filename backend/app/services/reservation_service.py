@@ -2,11 +2,12 @@ import asyncio
 from contextlib import contextmanager
 
 from sqlalchemy import and_, or_, text
-from sqlalchemy.orm import Session
-from datetime import datetime
+from sqlalchemy.orm import Session, joinedload
+from datetime import datetime, timedelta
 
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
+from app.config import settings
 from app.database import SessionLocal, engine
 from app.models.equipment import Equipment
 from app.models.lab import Lab
@@ -17,11 +18,64 @@ from app.schemas.reservation import (
     FreeSlotResponse,
     ReservationCreateRequest,
     ReservationResponse,
+    ScheduleDay,
+    WeekScheduleResponse,
     normalize_date,
 )
 # 开放时段按周中/周末分两套，"某一天该用哪套"只在 lab_service 里判断，
 # 这里和 agent 工具都从它派生，不再各自读 lab.open_time。
-from app.services import lab_service
+from app.services import lab_service, notification_service
+
+# 超时自动取消的原因文案。统计里也按这句话认"自动取消"，别处不要再手写一份。
+AUTO_CANCEL_REASON = "超时未审核，系统自动取消"
+
+
+def _reservation_summary(item: Reservation) -> str:
+    """给消息用的一句话摘要。
+
+    实验室名和日期时段都写进去，用户不用点回预约列表猜是哪一条。
+    设备预约再补上设备名，否则同一间实验室约了整间和约了设备的两条消息
+    看起来一模一样。
+    """
+    lab_name = item.lab.name if item.lab else f"实验室#{item.lab_id}"
+    if item.equipment_id and item.equipment:
+        subject = f"{lab_name}的{item.equipment.name}"
+    else:
+        subject = lab_name
+    return f"{subject}（{item.date} {item.start_time}-{item.end_time}）"
+
+
+def _start_at(item: Reservation) -> datetime | None:
+    """把预约的日期 + 开始时间拼成一个可比较的时刻。
+
+    库里这两列都是字符串（分别补零到 YYYY-MM-DD / HH:MM），拼起来再解析一次
+    比四处手写字符串切片安全。历史数据格式不对时返回 None，调用方按"无法判断"
+    处理——宁可不让取消，也不能因为解析失败就放行。
+    """
+    try:
+        return datetime.strptime(f"{item.date} {item.start_time}", "%Y-%m-%d %H:%M")
+    except (TypeError, ValueError):
+        return None
+
+
+def _can_cancel(item: Reservation, current_user: User, now: datetime) -> bool:
+    """这一行对当前用户来能不能自行取消。
+
+    规则跟 cancel_reservation 完全一致，两处必须一起改，否则会出现
+    "按钮是亮的，点下去被拒"或者反过来"能取消却看不见按钮"。
+    """
+    if item.user_id != current_user.id:
+        return False
+    if item.status == 0:
+        return True
+    if item.status == 1:
+        start = _start_at(item)
+        if start is None:
+            return False
+        return start - now >= timedelta(
+            hours=settings.RESERVATION_CANCEL_DEADLINE_HOURS
+        )
+    return False
 
 
 def get_reservation_page_list(
@@ -30,12 +84,34 @@ def get_reservation_page_list(
     page: int,
     page_size: int,
     status: int | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
 ):
+    # 日期筛选走的是 reservation.date 这一列（YYYY-MM-DD 字符串），
+    # 必须先规范化再比大小，否则 "2026-10-9" 会被排到 "2026-10-10" 后面。
+    if date_from:
+        try:
+            date_from = normalize_date(date_from)
+        except ValueError as exc:
+            raise BusinessException(message="开始日期格式应为 YYYY-MM-DD") from exc
+    if date_to:
+        try:
+            date_to = normalize_date(date_to)
+        except ValueError as exc:
+            raise BusinessException(message="结束日期格式应为 YYYY-MM-DD") from exc
+    if date_from and date_to and date_from > date_to:
+        raise BusinessException(message="开始日期不能晚于结束日期")
+
     query = db.query(Reservation)
     if current_user.role != "admin":
         query = query.filter(Reservation.user_id == current_user.id)
     if status is not None:
         query = query.filter(Reservation.status == status)
+    if date_from:
+        query = query.filter(Reservation.date >= date_from)
+    if date_to:
+        query = query.filter(Reservation.date <= date_to)
+
     total = query.count()
     items = (
         query.order_by(Reservation.id.desc())
@@ -43,6 +119,7 @@ def get_reservation_page_list(
         .limit(page_size)
         .all()
     )
+    now = datetime.now()
     result = []
     for item in items:
         res = ReservationResponse.model_validate(item)
@@ -50,6 +127,7 @@ def get_reservation_page_list(
         res.lab_name = item.lab.name if item.lab else None
         res.equipment_name = item.equipment.name if item.equipment else None
         res.type = "设备预约" if item.equipment_id else "实验室预约"
+        res.can_cancel = _can_cancel(item, current_user, now)
         result.append(res)
     return PageResponse(list=result, total=total)
 
@@ -291,16 +369,151 @@ def get_free_slots(
     )
 
 
+def get_week_schedule(
+    db: Session,
+    lab_id: int,
+    start_date: str | None = None,
+    equipment_id: int | None = None,
+) -> WeekScheduleResponse:
+    """从 start_date 起连续 7 天的开放时段和已占用时段。
+
+    界面上的「一周 × 时段」网格就靠这一份数据。和 get_free_slots 的区别是
+    它一次给出多天、只给原始占用，不在这里算空闲区间——留空还是占用、
+    是不是已经过去，都由前端拿同一份 busy/open_time 判断，避免两边各推一套
+    时段切分规则，出现"网格说能点、下单说没空"。
+    """
+    if start_date:
+        try:
+            start = datetime.strptime(normalize_date(start_date), "%Y-%m-%d")
+        except ValueError:
+            raise BusinessException(message="日期格式应为 YYYY-MM-DD")
+    else:
+        # 默认从今天开始。不把时间部分带进来，后面加天数才不会错位。
+        start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    lab = db.query(Lab).filter(Lab.id == lab_id).first()
+    if not lab:
+        raise BusinessException(message="实验室不存在")
+    if lab.status != 1:
+        raise BusinessException(message="实验室未开放预约")
+
+    equipment = None
+    if equipment_id:
+        equipment = db.query(Equipment).filter(Equipment.id == equipment_id).first()
+        if not equipment:
+            raise BusinessException(message="实验室设备不存在")
+        if equipment.status != 1:
+            raise BusinessException(message="实验室设备正在维修")
+        if equipment.lab_id != lab_id:
+            raise BusinessException(message="该设备不属于所选实验室")
+
+    days: list[ScheduleDay] = []
+    for offset in range(7):
+        day = start + timedelta(days=offset)
+        date_str = day.strftime("%Y-%m-%d")
+        open_time, close_time = lab_service.resolve_open_hours(lab, date_str)
+        busy: list[FreeSlotItem] = []
+        if open_time is not None:
+            # 占用范围和 create_reservation 用的是同一个 _busy_query：
+            # 整间实验室会显示所有设备预约，单台设备只显示自己和整间实验室的预约。
+            busy = [
+                FreeSlotItem(start_time=start_time, end_time=end_time)
+                for start_time, end_time in sorted(
+                    (item.start_time, item.end_time)
+                    for item in _busy_query(db, lab_id, date_str, equipment_id).all()
+                )
+            ]
+        days.append(
+            ScheduleDay(
+                date=date_str,
+                weekday=day.weekday(),
+                open_time=open_time,
+                close_time=close_time,
+                busy=busy,
+            )
+        )
+
+    return WeekScheduleResponse(
+        lab_id=lab.id,
+        lab_name=lab.name,
+        equipment_id=equipment_id,
+        equipment_name=equipment.name if equipment else None,
+        start_date=start.strftime("%Y-%m-%d"),
+        days=days,
+    )
+
+
 def cancel_reservation(db: Session, current_user: User, reservation_id: int):
+    """本人取消预约。
+
+    - 待审核：随时可以取消。
+    - 已通过：只在开始前 N 小时以上能取消（N 见 RESERVATION_CANCEL_DEADLINE_HOURS）。
+      再近就锁住，让用户去找管理员——管理员那条"强制取消"带原因，
+      用户那边看得到是为什么没的。
+    - 已拒绝 / 已取消：没有可取消的东西。
+    """
     item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
     if not item:
         raise BusinessException(message="预约记录不存在")
     if item.user_id != current_user.id:
         raise BusinessException(message="无权限取消该预约", code=403)
-    if item.status != 0:
-        raise BusinessException(message="只有待审核的预约才能取消")
+
+    now = datetime.now()
+    if item.status == 1:
+        start = _start_at(item)
+        deadline = timedelta(hours=settings.RESERVATION_CANCEL_DEADLINE_HOURS)
+        if start is None or start - now < deadline:
+            raise BusinessException(
+                message=(
+                    f"预约开始前 {settings.RESERVATION_CANCEL_DEADLINE_HOURS} "
+                    "小时内不能自行取消，请联系管理员"
+                )
+            )
+    elif item.status != 0:
+        raise BusinessException(message="当前状态的预约不能取消")
+
     item.status = 3
+    item.cancel_time = now
+    # 本人取消不填原因：是谁取消的已经由"操作人就是预约人"确定了，
+    # 再写一句"用户取消"只是噪音。管理员强制取消才必须有原因。
+    item.cancel_reason = None
     db.commit()
+
+
+def force_cancel_reservation(
+    db: Session, reservation_id: int, reason: str
+) -> None:
+    """管理员强制取消。待审核和已通过都能取消，原因会留给用户看。
+
+    这里刻意不复用 cancel_reservation：那条要校验归属、还要卡 2 小时截止线，
+    管理员恰恰是为了越过这两条才来的。把两条路合并，迟早会有人给管理员也
+    加上"开始前 2 小时内不能取消"。
+    """
+    item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not item:
+        raise BusinessException(message="预约记录不存在")
+    if item.status not in (0, 1):
+        raise BusinessException(message="当前状态的预约不能取消")
+
+    now = datetime.now()
+    item.status = 3
+    item.cancel_time = now
+    item.cancel_reason = reason
+    summary = _reservation_summary(item)
+    notification = notification_service.create_notification(
+        db,
+        user_id=item.user_id,
+        type=notification_service.TYPE_FORCE_CANCELED,
+        title="预约已被取消",
+        content=f"你预约的 {summary} 已被管理员取消。原因：{reason}。",
+        reservation_id=item.id,
+    )
+    # flush 只为拿到消息主键：邮件在 commit 之后才发，那时事务已经结束，
+    # 不能再依赖 ORM 对象上还没刷新的 id。消息和预约状态仍然在同一个事务里。
+    db.flush()
+    notification_id = notification.id
+    db.commit()
+    notification_service.dispatch_email(notification_id)
 
 
 def audit_reservation(db: Session, reservation_id: int, status: int):
@@ -311,8 +524,31 @@ def audit_reservation(db: Session, reservation_id: int, status: int):
         raise BusinessException(message="预约记录不存在")
     if item.status != 0:
         raise BusinessException(message="当前状态不支持审核")
+
     item.status = status
+    item.audit_time = datetime.now()
+    summary = _reservation_summary(item)
+    if status == 1:
+        type_ = notification_service.TYPE_APPROVED
+        title = "预约已通过"
+        content = f"你预约的 {summary} 已通过审核，请按时使用。"
+    else:
+        type_ = notification_service.TYPE_REJECTED
+        title = "预约被拒绝"
+        content = f"你预约的 {summary} 未通过审核。如需了解原因，请联系管理员。"
+
+    notification = notification_service.create_notification(
+        db,
+        user_id=item.user_id,
+        type=type_,
+        title=title,
+        content=content,
+        reservation_id=item.id,
+    )
+    db.flush()
+    notification_id = notification.id
     db.commit()
+    notification_service.dispatch_email(notification_id)
 
 
 def expire_pending_reservations():
@@ -321,14 +557,44 @@ def expire_pending_reservations():
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
         time = now.strftime("%H:%M")
-        items = db.query(Reservation).filter(Reservation.status == 0).all()
-        changed = False
+        # 一次把实验室和设备带出来：下面拼消息摘要要读名字，
+        # 不 joinedload 就是每条预约各查一次（N+1）。
+        items = (
+            db.query(Reservation)
+            .options(
+                joinedload(Reservation.lab), joinedload(Reservation.equipment)
+            )
+            .filter(Reservation.status == 0)
+            .all()
+        )
+        notifications = []
         for item in items:
             if item.date < today or (item.date == today and item.end_time <= time):
                 item.status = 3
-                changed = True
-        if changed:
+                item.cancel_time = now
+                # 自动取消也要写原因：否则用户只看到"已取消"，会以为是管理员
+                # 动的手，转头去问人。写清楚是系统超时，省一轮扯皮。
+                item.cancel_reason = AUTO_CANCEL_REASON
+                summary = _reservation_summary(item)
+                notifications.append(
+                    notification_service.create_notification(
+                        db,
+                        user_id=item.user_id,
+                        type=notification_service.TYPE_AUTO_CANCELED,
+                        title="预约已自动取消",
+                        content=(
+                            f"你预约的 {summary} 因超时未审核，已被系统自动取消，"
+                            "请重新预约或联系管理员。"
+                        ),
+                        reservation_id=item.id,
+                    )
+                )
+        if notifications:
+            db.flush()
+            notification_ids = [item.id for item in notifications]
             db.commit()
+            for notification_id in notification_ids:
+                notification_service.dispatch_email(notification_id)
 
     finally:
         db.close()

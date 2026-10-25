@@ -136,12 +136,20 @@
       "note": "已拒绝的预约不能取消"
     },
     {
-      "id": "approved-cannot-cancel",
+      "id": "approved-cancel-before-deadline",
       "now": "2026-10-19T10:00:00",
       "question": "已经审核通过的预约还能取消吗？",
+      "must_contain_any": [["2 小时", "2小时", "两小时"]],
+      "must_not_contain": [],
+      "note": "已通过：距开始 2 小时以上可自行取消；更近需联系管理员"
+    },
+    {
+      "id": "approved-cancel-within-deadline",
+      "now": "2026-10-19T10:00:00",
+      "question": "预约 1 小时后就要开始了，已经通过的预约现在还能取消吗？",
       "must_contain_any": [["不能", "不可以", "无法"]],
       "must_not_contain": [],
-      "note": "cancel_reservation 只允许 status=0（待审核），知识库原文以前写成「已通过也能取消」，已改"
+      "note": "进入开始前 2 小时内，本人不能取消，需要联系管理员"
     },
     {
       "id": "whole-lab-blocks-equipment",

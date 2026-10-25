@@ -16,6 +16,14 @@ export function getReservationPageListApi(params) {
   })
 }
 
+export function getWeekScheduleApi(params) {
+  return request({
+    url: '/api/reservation/week-schedule',
+    method: 'get',
+    params
+  })
+}
+
 export function cancelReservationApi(id) {
   return request({
     url: `/api/reservation/${id}/cancel`,
@@ -28,5 +36,13 @@ export function auditReservationApi(id, status) {
     url: `/api/reservation/${id}/audit`,
     method: 'put',
     data: { status }
+  })
+}
+
+export function forceCancelReservationApi(id, reason) {
+  return request({
+    url: `/api/reservation/${id}/force-cancel`,
+    method: 'put',
+    data: { reason }
   })
 }

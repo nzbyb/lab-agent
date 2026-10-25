@@ -3,10 +3,21 @@
     <el-dialog
       :model-value="visible"
       title="预约"
-      width="450"
-      @open="formRef.resetFields()"
+      width="min(820px, 94vw)"
+      top="6vh"
+      @open="handleOpen"
       @close="emit('update:visible', false)"
     >
+      <!-- 先看一周的占用，再决定具体时段。点绿色格子会自动填下面的表单；
+           手填表单仍然保留，想约半点的用户不用被网格限制。 -->
+      <WeekSchedule
+        v-if="visible && labId"
+        :lab-id="labId"
+        :equipment-id="equipmentId || null"
+        @select="handleSelectSlot"
+      />
+      <div class="reserve-divider"><span>或手动选择时间</span></div>
+
       <el-form
         ref="formRef"
         :rules="rules"
@@ -69,6 +80,7 @@
 import { ref, reactive } from 'vue'
 import { ElMessage } from 'element-plus'
 import { createReservationApi } from '@/api/reservation'
+import WeekSchedule from '@/components/WeekSchedule.vue'
 const props = defineProps({
   visible: Boolean,
   labId: Number,
@@ -89,6 +101,19 @@ const rules = {
   date: [{ required: true, message: '请选择预约日期', trigger: 'change' }],
   start_time: [{ required: true, message: '请选择开始时间', trigger: 'change' }],
   end_time: [{ required: true, message: '请选择结束时间', trigger: 'change' }]
+}
+
+const handleOpen = () => {
+  formRef.value?.resetFields()
+}
+
+// 点网格里的空格：只负责把日期和时间填进表单，不直接提交。
+// 用户还能补备注、改结束时间——直接提交等于绕过了表单校验和确认这一步。
+const handleSelectSlot = (slot) => {
+  form.date = slot.date
+  form.start_time = slot.start_time
+  form.end_time = slot.end_time
+  ElMessage.success(`已选择 ${slot.date} ${slot.start_time}-${slot.end_time}`)
 }
 
 const handleSubmit = async () => {
@@ -113,3 +138,23 @@ const handleSubmit = async () => {
   }
 }
 </script>
+
+<style scoped>
+/* 一条细分隔线，把"从网格挑"和"手填表单"分开 */
+.reserve-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 16px;
+  font-size: 12px;
+  color: var(--app-text-placeholder);
+}
+
+.reserve-divider::before,
+.reserve-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--app-border);
+}
+</style>

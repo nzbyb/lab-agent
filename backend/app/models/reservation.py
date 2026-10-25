@@ -1,4 +1,6 @@
-from sqlalchemy import ForeignKey, String
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -30,6 +32,19 @@ class Reservation(Base):
     remark: Mapped[str] = mapped_column(String(255), comment="备注", nullable=True)
     status: Mapped[int] = mapped_column(
         comment="预约状态 0待审核, 1已通过, 2已拒绝, 3已取消", default=0
+    )
+    # 下面三列是「我的预约」时间线和取消原因用的。
+    #
+    # 不拿 update_time 代替：那一列任何一次写入都会变（比如以后改备注），
+    # 时间线会跟着漂。审核时间和取消时间各自记一次，才说得清"什么时候发生的"。
+    audit_time: Mapped[datetime | None] = mapped_column(
+        DateTime, comment="审核时间"
+    )
+    cancel_time: Mapped[datetime | None] = mapped_column(
+        DateTime, comment="取消时间"
+    )
+    cancel_reason: Mapped[str | None] = mapped_column(
+        String(255), comment="取消原因"
     )
     user: Mapped[User] = relationship()
     lab: Mapped[Lab] = relationship()
