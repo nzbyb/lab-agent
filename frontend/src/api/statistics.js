@@ -6,3 +6,10 @@ export function getStatisticsOverviewApi() {
     method: 'get'
   })
 }
+
+export function getAdminWorkbenchApi() {
+  return request({
+    url: '/api/statistics/admin-workbench',
+    method: 'get'
+  })
+}

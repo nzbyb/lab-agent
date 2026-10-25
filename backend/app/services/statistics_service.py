@@ -7,7 +7,14 @@ from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.reservation import Reservation
 from app.models.user import User
-from app.schemas.statistics import LabRankItem, StatisticsOverviewResponse, TrendPoint
+from app.schemas.statistics import (
+    AdminWorkbenchResponse,
+    LabRankItem,
+    PendingReservationItem,
+    StatisticsOverviewResponse,
+    TrendPoint,
+)
+from app.services.reservation_service import AUTO_CANCEL_REASON
 
 # 趋势窗口长度（含今天）。改它要连着 tests/test_statistics.py 里断言长度的用例一起改。
 _TREND_DAYS = 7
@@ -141,4 +148,68 @@ def get_overview(db: Session, current_user: User) -> StatisticsOverviewResponse:
         reservation_canceled_total=by_status.get(3, 0),
         reservation_trend=_get_reservation_trend(scope_query),
         lab_ranking=_get_lab_ranking(db, scope_query),
+    )
+
+
+def get_admin_workbench(db: Session) -> AdminWorkbenchResponse:
+    """管理端首页的待办数字 + 等得最久的几条待审核。
+
+    只给管理员看，所以这里**不按用户过滤**，和 get_overview 的 scope_query 不同。
+    "今日预约"只算待审核和已通过：已拒绝 / 已取消的名额当天不会有人来用，
+    算进去会让管理员以为今天很忙。
+    """
+    now = datetime.now()
+    today = now.strftime("%Y-%m-%d")
+    cutoff = now - timedelta(days=7)
+
+    pending_total = (
+        db.query(Reservation).filter(Reservation.status == 0).count()
+    )
+    today_total = (
+        db.query(Reservation)
+        .filter(Reservation.date == today, Reservation.status.in_([0, 1]))
+        .count()
+    )
+    today_pending_total = (
+        db.query(Reservation)
+        .filter(Reservation.date == today, Reservation.status == 0)
+        .count()
+    )
+    auto_canceled_7d = (
+        db.query(Reservation)
+        .filter(
+            Reservation.status == 3,
+            Reservation.cancel_reason == AUTO_CANCEL_REASON,
+            Reservation.cancel_time >= cutoff,
+        )
+        .count()
+    )
+
+    # 先提交的先处理，别让一条上周的申请一直压在最底下。
+    # id 是 tie-break：同一秒提交的两条，顺序不能由数据库心情决定。
+    rows = (
+        db.query(Reservation)
+        .filter(Reservation.status == 0)
+        .order_by(Reservation.create_time.asc(), Reservation.id.asc())
+        .limit(5)
+        .all()
+    )
+    return AdminWorkbenchResponse(
+        pending_total=pending_total,
+        today_total=today_total,
+        today_pending_total=today_pending_total,
+        auto_canceled_7d=auto_canceled_7d,
+        pending_list=[
+            PendingReservationItem(
+                id=item.id,
+                user_name=item.user.name if item.user else None,
+                lab_name=item.lab.name if item.lab else None,
+                equipment_name=item.equipment.name if item.equipment else None,
+                date=item.date,
+                start_time=item.start_time,
+                end_time=item.end_time,
+                create_time=item.create_time,
+            )
+            for item in rows
+        ],
     )

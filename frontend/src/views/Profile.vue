@@ -1,6 +1,6 @@
 <template>
   <div class="settings-page">
-    <el-card>
+    <el-card class="settings-card">
       <template #header>
         <div class="app-card-title">
           <span>个人信息</span>
@@ -135,25 +135,35 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* 桌面端维持原来的样子：占内容区一半宽。 */
+/* 卡片居中、限宽。
+   原来是 width: 50% 贴着左边排的：屏幕一宽，右半边空一大块，看着像没加载完；
+   而输入框却被拉到很长，填一个名字要横跨半个屏幕。
+   限到 720px 之后两种毛病一起没了。 */
 .settings-page {
-  width: 50%;
+  display: flex;
+  flex-direction: column;
+  /* 内容区可视高度 = 视口 - 页头 - 上下内边距（20 + 20）。
+     给这块高度，下面的 margin: auto 才有"剩余空间"可以分。 */
+  min-height: calc(100vh - var(--app-header-height) - 40px);
 }
-/* 右边留一道白，免得输入框顶到卡片边缘 */
+
+.settings-card {
+  width: 100%;
+  max-width: 720px;
+  /* 横竖都居中。内容比可视区高时，auto 会退化成 0，卡片从顶部开始，
+     不会被推到屏幕上面去（用 justify-content: center 就会）。 */
+  margin: auto;
+}
+
 .settings-form {
   width: 100%;
-  padding-right: 50px;
 }
 
 /* 窄屏（断点跟 global.css 一致）。
-   原来宽度是写死的 50%：手机屏才 375px 宽，一半只有 180 多 px，
-   再扣掉 50px 右内边距，表单被挤成一条缝，几乎没法填。 */
+   手机的左右内边距是 12，所以这里减 24；卡片撑满整个宽度，限宽交给 max-width。 */
 @media (max-width: 767px) {
   .settings-page {
-    width: 100%;
-  }
-  .settings-form {
-    padding-right: 0;
+    min-height: calc(100vh - var(--app-header-height) - 24px);
   }
 }
 </style>

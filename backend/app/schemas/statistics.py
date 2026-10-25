@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 
@@ -36,3 +38,30 @@ class StatisticsOverviewResponse(BaseModel):
     reservation_canceled_total: int = 0
     reservation_trend: list[TrendPoint] = []
     lab_ranking: list[LabRankItem] = []
+
+
+class PendingReservationItem(BaseModel):
+    """管理员工作台上"等得最久的几条"。"""
+
+    id: int
+    user_name: str | None = None
+    lab_name: str | None = None
+    equipment_name: str | None = None
+    date: str
+    start_time: str
+    end_time: str
+    create_time: datetime | None = None
+
+
+class AdminWorkbenchResponse(BaseModel):
+    """管理端首页待办数据。只给管理员调，数据范围是全库。
+
+    四个计数分开给，前端才能分别写"待审核 / 今日预约 / 今日待审核 / 近 7 天自动取消"。
+    没有合并成一个"待办数"：这些数字的紧急程度不同，堆成一个数字反而看不出先做哪件。
+    """
+
+    pending_total: int = 0
+    today_total: int = 0
+    today_pending_total: int = 0
+    auto_canceled_7d: int = 0
+    pending_list: list[PendingReservationItem] = []

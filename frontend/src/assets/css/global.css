@@ -12,6 +12,27 @@ body,
 }
 
 /* ---------------------------------------------------------------------------
+ * 主色（2026-10-25 视觉升级）
+ *
+ * Element Plus 只把 --el-color-primary 当成一个普通变量，它派生出来的
+ * light-3 / 5 / 7 / 8 / 9 和 dark-2 都是在 CSS 里预先算死的色值，不会跟着联动。
+ * 所以换主色必须把这七个档位一起覆盖：只改第一行的话，按钮是新的蓝，
+ * 紧挨着的标签底色、悬停行、分页高亮还是旧的蓝，一眼就能看出没换干净。
+ *
+ * 选 #2563eb 而不是 EP 默认的 #409eff：深一档，压在白卡片和深色侧栏上都不刺眼，
+ * 也更接近成熟后台系统的观感。
+ * ------------------------------------------------------------------------- */
+:root {
+  --el-color-primary: #2563eb;
+  --el-color-primary-light-3: #6692f1;
+  --el-color-primary-light-5: #92b1f5;
+  --el-color-primary-light-7: #bdd0f9;
+  --el-color-primary-light-8: #d3dffb;
+  --el-color-primary-light-9: #e9effd;
+  --el-color-primary-dark-2: #1e4fbc;
+}
+
+/* ---------------------------------------------------------------------------
  * 设计变量
  *
  * 改造前，颜色、圆角、间距全是散在各页面内联 style 里的字面量，同一个语义
@@ -26,8 +47,9 @@ body,
   --app-text-secondary: #909399;
   --app-text-placeholder: #8c939d;
 
-  /* 面与底 */
-  --app-bg-page: #f5f7fa;
+  /* 面与底。页面底色比原来再灰一点点：卡片是纯白，底色越接近中性灰，
+     卡片边界越清楚，整页不会糊成一片白。 */
+  --app-bg-page: #f4f6fa;
   --app-bg-muted: #f5f5f5;
 
   /* 圆角 */
@@ -68,13 +90,44 @@ body,
   --app-status-approved: var(--el-color-success);
   --app-status-rejected: var(--el-color-danger);
   --app-status-canceled: var(--el-color-info);
+
+  /* -------------------------------------------------------------------------
+   * 深色侧栏（2026-10-25）
+   *
+   * 改造前侧栏和页头都是白的，和内容区的白卡片连成一整片，看不出"导航"和
+   * "内容"的边界。压深侧栏是最省事的解法：它一口气把层次分出来，而且
+   * 不需要动任何页面内部的结构。
+   *
+   * 不用纯黑，也不用很深的藏蓝：一开始那版是 #0f172a，在白卡片旁边
+   * 压得太重，像贴了一条黑边。换成石板灰蓝（slate-800），明度抬高一档，
+   * 仍然是深色但不是"黑洞"，跟浅灰内容区的过渡自然得多。
+   * ----------------------------------------------------------------------- */
+  --app-sidebar-bg: #1e293b;
+  --app-sidebar-bg-hover: rgba(255, 255, 255, 0.06);
+  --app-sidebar-text: #a3b1c6;
+  --app-sidebar-text-active: #ffffff;
+  --app-sidebar-divider: rgba(255, 255, 255, 0.08);
+
+  /* 页头高度。侧栏的菜单项和页头的标题要落在同一条水平线上，所以这个值
+     只在这里写一次，Layout.vue 里两头都引用它。 */
+  --app-header-height: 64px;
+
+  /* 卡片排版用的浅描边。比 --app-border 更淡：卡片铺在浅灰底上，
+     边界靠底色差就能看出来，描边只需要收个口。 */
+  --app-card-border: #e9eef5;
 }
 
 body {
-  font-family: 'Microsoft YaHei', sans-serif;
+  /* 系统字体优先：Windows 上是"微软雅黑"，macOS / iOS 上是苹方，安卓上是
+     思源黑体。原来写死 Microsoft YaHei，在非 Windows 设备上会掉到浏览器默认
+     的衬线体，同一份代码换台电脑就是另一个观感。 */
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
   font-size: 14px;
   color: var(--app-text-primary);
   background-color: var(--app-bg-page);
+  -webkit-font-smoothing: antialiased;
 }
 
 /* 清除标题默认边距 */
@@ -198,6 +251,152 @@ img {
   width: 150px;
   height: 150px;
   text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+ * 组件皮肤（2026-10-25 视觉升级）
+ *
+ * 只改"外层观感"——圆角、描边、阴影、表头底色，不改任何尺寸和排布。
+ * 这样 15 个页面会一起从"默认 Element Plus"变成同一套视觉语言，而
+ * 每个页面的布局逻辑一行都不用动。
+ *
+ * 为什么敢全局改：这些属性在项目里没有任何页面覆盖过（各页面的 scoped 样式
+ * 里搜不到这些选择器），所以不存在"改全局把某页搞坏"的情况。
+ * ------------------------------------------------------------------------- */
+
+/* 卡片：12px 圆角 + 极浅阴影。阴影做得很淡是有意的——层主要靠底色差
+   （浅灰页面 / 纯白卡片）建立，阴影只负责收边，重了会显得脏。 */
+.el-card {
+  border-radius: 12px;
+  border-color: var(--app-card-border);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.el-card__header {
+  padding: 16px 20px;
+  border-bottom-color: #eef2f7;
+}
+
+/* 按钮和输入框统一 8px 圆角。默认的 4px 配 12px 的卡片会显得尖锐。 */
+.el-button {
+  border-radius: 8px;
+}
+
+.el-input__wrapper,
+.el-textarea__inner,
+.el-select__wrapper {
+  border-radius: 8px;
+}
+
+/* 表头：浅灰底 + 深灰字 + 稍小字号。表头是"标签"，不该和表格内容同权重。 */
+.el-table {
+  --el-table-border-color: #eef2f7;
+}
+
+.el-table th.el-table__cell {
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.el-table td.el-table__cell {
+  padding: 12px 0;
+}
+
+/* 状态标签做成胶囊。方角标签在表格的右边一列排开时，像一排小按钮；
+   胶囊一眼就能看出"这是状态，不是能点的东西"。 */
+.el-tag {
+  border-radius: 999px;
+  padding: 0 10px;
+}
+
+.el-pagination.is-background .el-pager li,
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .btn-next {
+  border-radius: 8px;
+}
+
+.el-dialog {
+  border-radius: 14px;
+}
+
+/* ---------------------------------------------------------------------------
+ * 登录 / 注册页的公共骨架（2026-10-25）
+ *
+ * 两页原本各写一套：登录是左右分栏，注册是正中一张 380px 白卡片，摆在一起
+ * 不像同一个系统。这里把"左边品牌区 + 右边表单区"的外框收成公共类，
+ * 左边那块本身抽成了 components/AuthBrandPanel.vue。
+ *
+ * 断点跟品牌区内部一致，都用 900px：两处不一致的话，会卡在"页面已经竖排、
+ * 品牌区还按横排留 140px 白边"这种半截状态。
+ * ------------------------------------------------------------------------- */
+.auth-page {
+  display: flex;
+  min-height: 100vh;
+}
+
+.auth-form-panel {
+  flex: 1 1 45%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background-color: #fff;
+}
+
+.auth-form-inner {
+  width: 100%;
+  max-width: 380px;
+}
+
+.auth-form-title {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.auth-form-subtitle {
+  margin-top: 8px;
+  margin-bottom: 28px;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+}
+
+/* 主按钮比默认高 4px：在登录/注册这种"只有一个主操作"的页面上，
+   它是整页唯一该被一眼看到的东西。 */
+.auth-submit {
+  width: 100%;
+  height: 44px;
+  border-radius: 10px;
+  font-size: 15px;
+}
+
+.auth-form-footer {
+  margin-top: 20px;
+  text-align: right;
+  font-size: 14px;
+  color: var(--app-text-secondary);
+}
+
+.auth-form-footer a {
+  color: var(--el-color-primary);
+  font-weight: 500;
+}
+
+@media (max-width: 900px) {
+  .auth-page {
+    flex-direction: column;
+    /* 手机上 100vh 是"地址栏收起后"的高度，地址栏一露出来页面底部就被推出去。
+       dvh 跟着可视区实时变；不认 dvh 的老浏览器退回上一行。 */
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
+  .auth-form-panel {
+    flex: 1;
+    padding: 32px 24px 48px;
+  }
 }
 
 /* ---------------------------------------------------------------------------

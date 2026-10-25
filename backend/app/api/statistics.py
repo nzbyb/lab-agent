@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.common.response import Response
 from app.database import get_db
-from app.dependencies.auth import get_current_user
+from app.dependencies.auth import get_current_admin, get_current_user
 from app.models.user import User
 from app.services import statistics_service
 
@@ -19,4 +19,13 @@ def get_statistics_overview(
     db: Session = Depends(get_db),
 ):
     res = statistics_service.get_overview(db, current_user)
+    return Response.success(data=res)
+
+
+@router.get("/admin-workbench")
+def get_admin_workbench(
+    current_user: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    res = statistics_service.get_admin_workbench(db)
     return Response.success(data=res)

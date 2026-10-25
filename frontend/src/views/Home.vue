@@ -1,8 +1,7 @@
 <template>
   <div>
-    <!-- 欢迎条。刻意不用渐变背景：渐变块占地很大却只承载"欢迎"这一件事，
-         是典型的装饰性开销。改成白底 + 左侧一条主色竖条——同样的极简成本，
-         但竖条是在表达"这里是页面起点"，有分区含义，不是纯装饰。 -->
+    <!-- 页面标题区。不做成卡片：页头已经写着"系统首页"，这里再套一层白底
+         只是把同一句话说两遍，还会让下方四块指标卡失去参照。 -->
     <div class="hero">
       <div class="hero-main">
         <div class="hero-title">{{ greeting }}，{{ userStore.userInfo?.name || '同学' }}</div>
@@ -16,6 +15,66 @@
       </el-button>
     </div>
 
+    <!-- 管理员专属：待办工作台。学生看不到这块，也不发这个请求。
+         它解决的问题是"首页有数字，但没有下一步"——管理员看完统计还得自己去翻菜单。 -->
+    <el-card v-if="userStore.isAdmin" shadow="never" class="panel workbench">
+      <template #header>
+        <div class="panel-head">
+          <div class="app-card-title">待办工作台</div>
+          <el-button
+            link
+            type="primary"
+            @click="router.push('/manager/audit-reservation')"
+            >去审核</el-button
+          >
+        </div>
+      </template>
+
+      <div class="workbench-stats">
+        <div
+          v-for="tile in workbenchTiles"
+          :key="tile.key"
+          class="workbench-stat"
+          :class="tile.tone ? `is-${tile.tone}` : ''"
+        >
+          <div class="workbench-stat-label">{{ tile.label }}</div>
+          <div class="workbench-stat-value">
+            {{ tile.value }}<span class="workbench-stat-unit">{{ tile.unit }}</span>
+          </div>
+          <div class="workbench-stat-foot">{{ tile.foot }}</div>
+        </div>
+      </div>
+
+      <div v-if="pendingRows.length" class="workbench-list">
+        <div class="workbench-list-head">
+          <span>等得最久的待审核</span>
+          <span class="panel-sub">共 {{ pendingTotal }} 条</span>
+        </div>
+        <div v-for="row in pendingRows" :key="row.id" class="workbench-row">
+          <div class="workbench-row-main">
+            <div class="workbench-row-title">
+              {{ row.lab_name || '实验室' }}
+              <template v-if="row.equipment_name"> · {{ row.equipment_name }}</template>
+            </div>
+            <div class="workbench-row-meta">
+              {{ row.date }} {{ row.start_time }}-{{ row.end_time }}
+              · 预约人 {{ row.user_name || '未知' }}
+              · 提交于 {{ formatWorkbenchTime(row.create_time) }}
+            </div>
+          </div>
+          <el-button
+            size="small"
+            type="primary"
+            @click="router.push('/manager/audit-reservation')"
+            >去处理</el-button
+          >
+        </div>
+      </div>
+      <div v-else class="workbench-empty">
+        没有待审核的预约，今天的申请都处理完了。
+      </div>
+    </el-card>
+
     <!-- 四个指标磁贴。原来是"开放的实验室 10"和"预约数 16"两个裸数字并排一行，
          没有单位、没有口径、没有分母，看不出 10 是好还是不好。 -->
     <el-row :gutter="16" class="kpi-row">
@@ -23,7 +82,9 @@
         <div class="kpi" :class="tile.tone ? `is-${tile.tone}` : ''">
           <div class="kpi-head">
             <span class="kpi-label">{{ tile.label }}</span>
-            <el-icon class="kpi-icon"><component :is="tile.icon" /></el-icon>
+            <span class="kpi-icon"
+              ><el-icon><component :is="tile.icon" /></el-icon
+            ></span>
           </div>
           <div class="kpi-value">
             {{ tile.value }}<span class="kpi-unit">{{ tile.unit }}</span>
@@ -142,7 +203,7 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getStatisticsOverviewApi } from '@/api/statistics'
+import { getAdminWorkbenchApi, getStatisticsOverviewApi } from '@/api/statistics'
 import BaseChart from '@/components/BaseChart.vue'
 import {
   ArrowRight,
@@ -165,8 +226,51 @@ import { useUserStore } from '@/stores/user'
 // 不要解构：const { userInfo } = useUserStore() 会丢掉响应性。
 const userStore = useUserStore()
 
-// 统计接口的原始返回。整页只发这一个请求。
+// 统计接口的原始返回。管理员会额外发一个待办工作台请求。
 const overview = ref(null)
+const workbench = ref(null)
+
+const pendingRows = computed(() => workbench.value?.pending_list || [])
+const pendingTotal = computed(() => workbench.value?.pending_total ?? 0)
+
+// 三个数字各自回答"现在要不要动手"：
+// 待审核 = 积压量；今日预约 = 今天的接待压力；自动取消 = 审核不及时的代价。
+const workbenchTiles = computed(() => {
+  const data = workbench.value
+  const pending = data?.pending_total ?? 0
+  const todayPending = data?.today_pending_total ?? 0
+  const autoCanceled = data?.auto_canceled_7d ?? 0
+  return [
+    {
+      key: 'pending',
+      label: '待审核',
+      value: pending,
+      unit: '条',
+      foot: todayPending > 0 ? `其中今天 ${todayPending} 条` : '没有今天到期的',
+      tone: pending > 0 ? 'warning' : ''
+    },
+    {
+      key: 'today',
+      label: '今日预约',
+      value: data?.today_total ?? 0,
+      unit: '条',
+      foot: '只算待审核和已通过'
+    },
+    {
+      key: 'auto',
+      label: '近 7 天自动取消',
+      value: autoCanceled,
+      unit: '条',
+      foot: autoCanceled > 0 ? '超时未审核，建议缩短处理时间' : '没有因超时被取消的',
+      tone: autoCanceled > 0 ? 'warning' : ''
+    }
+  ]
+})
+
+const formatWorkbenchTime = (value) => {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').slice(5, 16)
+}
 
 // 拿不到数据时兜底 0，而不是让 undefined 显示到页面上。
 const hasRanking = computed(() => rankingList.value.length > 0)
@@ -405,6 +509,16 @@ onMounted(async () => {
     // 统计只是首页的锦上添花，不该因为它失败就弹错、或者让整页挂掉。
     overview.value = null
   }
+
+  if (userStore.isAdmin) {
+    try {
+      const res = await getAdminWorkbenchApi()
+      if (res.code === 200) workbench.value = res.data
+    } catch {
+      // 工作台失败就整块显示 0，上面的统计和图表照常，不弹错。
+      workbench.value = null
+    }
+  }
 })
 </script>
 
@@ -416,10 +530,20 @@ onMounted(async () => {
 .kpi {
   height: 100%;
   margin-bottom: 16px;
-  padding: 18px 20px;
+  padding: 20px;
   background: #fff;
-  border: 1px solid var(--app-border);
-  border-radius: var(--app-radius-lg);
+  border: 1px solid var(--app-card-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+/* 悬停微微抬起。指标卡不是可点区域，所以只给一点点位移——
+   幅度大到像按钮，反而会让人以为能点进去。 */
+.kpi:hover {
+  box-shadow: 0 8px 20px -12px rgba(15, 23, 42, 0.28);
+  transform: translateY(-2px);
 }
 .kpi-head {
   display: flex;
@@ -428,17 +552,29 @@ onMounted(async () => {
 }
 .kpi-label {
   font-size: 13px;
+  font-weight: 500;
   color: var(--app-text-secondary);
 }
+/* 图标放进一块与主色同色系的浅色方块里。原来是裸图标，和标签、数字
+   挤在同一行，看着像漏画了三块色块——有了底色，四张卡才像一组。 */
 .kpi-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
   font-size: 18px;
-  color: var(--app-text-placeholder);
+  background-color: var(--el-color-primary-light-9);
+  color: var(--app-primary);
 }
 .kpi-value {
-  margin-top: 10px;
-  font-size: 28px;
+  margin-top: 8px;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.2;
+  letter-spacing: -0.5px;
   color: var(--app-text-primary);
   /* 等宽数字：数字变化时宽度不跳动 */
   font-variant-numeric: tabular-nums;
@@ -447,6 +583,7 @@ onMounted(async () => {
   margin-left: 4px;
   font-size: 13px;
   font-weight: 400;
+  letter-spacing: 0;
   color: var(--app-text-secondary);
 }
 .kpi-foot {
@@ -454,8 +591,11 @@ onMounted(async () => {
   font-size: 12px;
   color: var(--app-text-secondary);
 }
-.kpi.is-warning .kpi-value,
+.kpi.is-warning .kpi-value {
+  color: var(--app-status-pending);
+}
 .kpi.is-warning .kpi-icon {
+  background-color: var(--el-color-warning-light-9);
   color: var(--app-status-pending);
 }
 
@@ -611,6 +751,120 @@ onMounted(async () => {
 }
 
 /* ---------------------------------------------------------------------------
+ * 管理端待办工作台
+ * ------------------------------------------------------------------------- */
+.workbench-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.workbench-stat {
+  padding: 14px 16px;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-bg-muted);
+}
+
+.workbench-stat-label {
+  font-size: 12px;
+  color: var(--app-text-secondary);
+}
+
+.workbench-stat-value {
+  margin-top: 6px;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--app-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.workbench-stat-unit {
+  margin-left: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--app-text-secondary);
+}
+
+.workbench-stat-foot {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--app-text-secondary);
+}
+
+/* 有积压才标琥珀色；0 条是正常状态，不上色 */
+.workbench-stat.is-warning {
+  background: var(--el-color-warning-light-9);
+  border-color: var(--el-color-warning-light-7);
+}
+
+.workbench-stat.is-warning .workbench-stat-value {
+  color: var(--app-status-pending);
+}
+
+.workbench-list {
+  margin-top: 16px;
+}
+
+.workbench-list-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--app-text-primary);
+}
+
+.workbench-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--app-border);
+}
+
+.workbench-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.workbench-row-title {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--app-text-primary);
+}
+
+.workbench-row-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
+}
+
+.workbench-empty {
+  margin-top: 14px;
+  padding: 18px;
+  border: 1px dashed var(--app-border);
+  border-radius: 10px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--app-text-secondary);
+}
+
+@media (max-width: 767px) {
+  .workbench-row {
+    align-items: flex-start;
+  }
+}
+
+/* ---------------------------------------------------------------------------
  * 两列等高
  *
  * el-row 的列本来就是等高的（flex 默认 align-items: stretch），问题出在
@@ -686,7 +940,7 @@ onMounted(async () => {
    就是 --el-border-color-light，也就是 --app-border，本来就一致。
    作用域只在本页，其余 13 个页面维持原样。 */
 .el-card {
-  border-radius: var(--app-radius-lg);
+  border-radius: 12px;
 }
 
 /* ---------------------------------------------------------------------------
@@ -694,37 +948,44 @@ onMounted(async () => {
  * ------------------------------------------------------------------------- */
 .hero {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
-  padding: 18px 20px;
-  background: #fff;
-  border: 1px solid var(--app-border);
-  /* 这条主色竖条代替渐变背景：同样的极简成本，但它在表达"页面起点"，
-     是有含义的分区标记，而不是纯粹的装饰。 */
-  border-left: 4px solid var(--app-primary);
-  border-radius: var(--app-radius-lg);
+  margin-bottom: 20px;
 }
 .hero-title {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
+  letter-spacing: -0.2px;
   color: var(--app-text-primary);
 }
 .hero-sub {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 6px;
   font-size: 13px;
   color: var(--app-text-secondary);
 }
 .hero-tag {
-  padding: 1px 8px;
-  border-radius: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
   font-size: 12px;
+  font-weight: 500;
   background: var(--el-color-primary-light-9);
   color: var(--app-primary);
+}
+
+/* 窄屏：标题和按钮并排会挤，改成上下两行 */
+@media (max-width: 767px) {
+  .hero {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero-title {
+    font-size: 19px;
+  }
 }
 
 /* ---------------------------------------------------------------------------

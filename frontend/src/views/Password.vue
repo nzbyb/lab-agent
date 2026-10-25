@@ -1,18 +1,12 @@
 <template>
   <div class="settings-page">
-    <el-card>
+    <el-card class="settings-card">
       <template #header>
         <div class="app-card-title">
           <span>修改密码</span>
         </div>
       </template>
-      <el-form
-        ref="formRef"
-        :rules="rules"
-        :model="form"
-        label-width="80px"
-        class="settings-form"
-      >
+      <el-form ref="formRef" :rules="rules" :model="form" label-width="80px" class="settings-form">
         <el-form-item label="原密码" prop="oldPassword">
           <el-input
             type="password"
@@ -113,25 +107,26 @@ const handleSubmit = async () => {
 </script>
 
 <style scoped>
-/* 桌面端维持原来的样子：占内容区一半宽。 */
+/* 卡片居中、限宽，跟个人信息页同一套处理，理由见 Profile.vue。 */
 .settings-page {
-  width: 50%;
-}
-/* 右边留一道白，免得输入框顶到卡片边缘 */
-.settings-form {
-  width: 100%;
-  padding-right: 50px;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - var(--app-header-height) - 40px);
 }
 
-/* 窄屏（断点跟 global.css 一致）。
-   原来宽度是写死的 50%：手机屏才 375px 宽，一半只有 180 多 px，
-   再扣掉 50px 右内边距，表单被挤成一条缝，几乎没法填。 */
+.settings-card {
+  width: 100%;
+  max-width: 720px;
+  margin: auto;
+}
+
+.settings-form {
+  width: 100%;
+}
+
 @media (max-width: 767px) {
   .settings-page {
-    width: 100%;
-  }
-  .settings-form {
-    padding-right: 0;
+    min-height: calc(100vh - var(--app-header-height) - 24px);
   }
 }
 </style>
