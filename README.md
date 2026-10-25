@@ -14,17 +14,19 @@
 
 **学生**
 
-- 注册 / 登录（JWT），改资料、改密码
+- 注册 / 登录（JWT）；注册支持邮箱验证码，登录支持账号+密码、手机号+密码、QQ 邮箱+验证码三种方式，改资料、改密码；忘记密码可用绑定邮箱的验证码自助重置
 - 按关键词搜实验室、看设备清单
 - 预约实验室：选日期和时段，时间冲突会被拦下
 - 借用设备：预约设备时要一并选所属实验室；同一时段约了整间实验室，这间里的设备就都约不了，反过来也一样（只有同间实验室的两台不同设备互不影响）
-- 我的预约：查看、取消（只有待审核的能取消）。待审核的预约过了时段还没人审核，后台每 60 秒扫一次，自动置为已取消；已通过、已拒绝的不在这个扫描范围里
+- 我的预约：按状态和日期筛选，点详情看状态时间线。待审核的随时能取消；已通过的，距开始还有 2 小时以上也能自行取消，再近就要联系管理员。待审核的预约过了时段还没人审核，后台每 60 秒扫一次，自动置为已取消并写明原因；已通过、已拒绝的不在这个扫描范围里
+- 消息通知：预约通过、被拒绝、被管理员取消、超时自动取消时，本人会收到一条站内消息，顶栏铃铛显示未读数，也可以进消息页按未读筛选、一键全部已读；账号绑了邮箱且 SMTP 配好时，同一条消息还会发一封邮件
 - AI 助手：查规章制度、查某天某实验室的空闲时段、查设备，也能直接下单；对话历史存在后端，换台设备登录还能接着聊
 
 **管理员**
 
 - 实验室、设备的增删改查
-- 审核预约
+- 审核预约；强制取消待审核或已通过的预约，必须填写原因，用户在自己的预约记录里能看到
+- 首页待办工作台：待审核积压、今日预约、今日待审核、近 7 天因超时自动取消的数量，外加等得最久的 5 条待审核，可以直接跳去处理
 - 用户管理，含**重置他人密码**（不需要知道对方原密码；重置后那个人所有设备立刻掉线）
 
 ## 技术栈
@@ -33,7 +35,7 @@
 | --- | --- |
 | 前端 | Vue 3（`<script setup>`）、Vite、Pinia、Vue Router、Element Plus、ECharts、axios、marked + DOMPurify |
 | 后端 | FastAPI、SQLAlchemy 2.0、Pydantic v2、PyMySQL |
-| 数据库 | MySQL；表结构由 Alembic 管（迁移在 `backend/migrations/`，服务启动时自动升到最新）。实验室开放时间分周中、周末两档，同一天用哪档由 `lab_service.resolve_open_hours` 一处判定 |
+| 数据库 | MySQL；表结构由 Alembic 管（迁移在 `backend/migrations/`，部署时由 compose 的 `migrate` 服务先跑 `python -m app.migrate`，后端启动不建表）。实验室开放时间分周中、周末两档，同一天用哪档由 `lab_service.resolve_open_hours` 一处判定 |
 | 鉴权 | JWT（PyJWT）+ bcrypt |
 | AI | LangGraph 编排工具调用、langchain-openai / langchain-core、ChromaDB + sentence-transformers + `BAAI/bge-small-zh-v1.5` 做本地向量检索 |
 | 限流 | slowapi；计数默认存 Redis（Redis 不可用时退回进程内存，不会让接口报错） |
@@ -58,7 +60,7 @@ copy .env.example .env          # macOS / Linux: cp .env.example .env
 | `JWT_SECRET_KEY` | `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | 任何 OpenAI 兼容接口，要有 `/chat/completions` |
 
-`TZ`、`CORS_ORIGINS`、`JWT_EXPIRE_HOURS` 都有默认值，不用动。这五个少一个，`docker compose up` 会**直接报错退出**，不会拿空值硬起——`JWT_SECRET_KEY` 照抄 `.env.example` 里的示例值也一样起不来（后端的启动自检会拒绝）。
+`TZ`、`CORS_ORIGINS`、`JWT_EXPIRE_HOURS` 都有默认值，不用动。这五个少一个，`docker compose up` 会**直接报错退出**，不会拿空值硬起——`JWT_SECRET_KEY` 照抄 `.env.example` 里的示例值也一样起不来（后端的启动自检会拒绝）。要用邮箱验证码注册/登录或接收预约结果邮件，再填 `SMTP_USER` 和 `SMTP_PASSWORD`（QQ 邮箱的 SMTP 授权码）；不填就是关掉邮箱验证码和通知邮件，账号密码、手机号登录、站内消息和旧的账号注册都照常。
 
 ```bash
 docker compose up -d
@@ -66,7 +68,8 @@ docker compose up -d
 
 第一次要下基础镜像和一批 Python 依赖。装完 `site-packages` 是 1.8G，其中 CPU 版 torch 自己就占 773M，后端镜像最终 2.6G，慢是正常的。（torch 要是不单独装 CPU 版，pip 会把 CUDA 版一起拽下来，再白多两个多 G。）
 
-> 起来之后是**空库**：表由后端启动时自动建，但一条数据都没有。界面能开，登录不进去。
+> 起来之后是**空库**：表由一次性的 `migrate` 服务先建好，但一条数据都没有。界面能开，登录不进去。
+> `docker compose ps` 里 `migrate` 显示 `Exited (0)` 是正常的——它就是跑完就退出的。
 
 灌演示数据、顺手注册一个账号：
 
@@ -90,7 +93,7 @@ bash scripts/init-demo.sh --username 你的账号名 --admin
 - **知识库索引没挂卷**，容器重建就会重做一遍。第一次要下 92MB 的 embedding 模型，缓存在仓库根的 `./.hf-cache/`（这个目录会保留，不会重复下）。
 - **改了代码要重新构建**：`docker compose up -d --build`。跟日志：`docker compose logs -f backend`。
 - **限流计数在 Redis 里**（`docker compose` 默认就配好，不用管）：多进程共用一份，**后端重启不清零**。Redis 挂了会退回进程内存继续限流，网站照常可用，`docker compose logs -f backend` 里能看到 `Rate limit storage unreachable`。
-- **后端是单进程跑的**（没开 `--workers`）：知识库重建锁这类东西还在进程内存里，多开就各算各的。
+- **后端仍然是单进程跑的**（没开 `--workers`）。数据库迁移已经挪出启动流程（`migrate` 服务先跑，多进程同时启动也不会抢着改表），但知识库重建用的锁和 embedding 模型对象还在进程内存里，多开仍会各算各的。要真正开多 worker，得先把这两处挪到进程外。
 - **容器用哪个时区由 `TZ` 决定**，默认 `Asia/Shanghai`。填错的话 AI 答"现在有哪些实验室开放"会整体偏八小时，界面上还看不出来。
 
 想在本机改代码，接着往下看。
@@ -124,14 +127,30 @@ CREATE DATABASE lab_agent DEFAULT CHARSET utf8mb4;
 | `CORS_ORIGINS` | 逗号分隔，本机开发用默认值就行 |
 | `AI_MAX_CONCURRENCY` | 同时在跑的 AI 对话上限，默认 3，可以不填 |
 | `REDIS_URL` | 限流计数的存储，本机不填就用进程内存；Docker 部署由 compose 自动注入 |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USE_SSL` | 邮箱验证码和预约结果通知邮件用；QQ 邮箱填 `smtp.qq.com` / `465` / `true`。不填则邮箱验证码和通知邮件都不可用，其它登录方式和站内消息照常 |
+| `SMTP_USER` / `SMTP_PASSWORD` | 发件邮箱和它的 **SMTP 授权码**（不是 QQ 登录密码）。授权码只放本地 `.env`，不要提交 |
+| `SMTP_FROM_NAME` | 邮件里显示的发件人名称，默认「智能实验室预约系统」 |
+| `EMAIL_CODE_EXPIRE_MINUTES` / `EMAIL_CODE_COOLDOWN_SECONDS` / `EMAIL_CODE_MAX_ATTEMPTS` | 验证码 5 分钟过期、同一邮箱 60 秒冷却、最多输错 5 次，都有默认值 |
+| `AUTO_MIGRATE` | 默认 `false`。改成 `true` 后启动时自动跑迁移（本机图省事用）；正式部署交给 compose 的 `migrate` 服务 |
+| `SENTRY_DSN` / `SENTRY_ENVIRONMENT` / `SENTRY_TRACES_SAMPLE_RATE` | 错误监控，可选。DSN 留空就完全关闭；填了之后后端 500 会上报 Sentry |
 
 上面五个没有默认值（`DATABASE_URL`、`JWT_SECRET_KEY` 和那三个 LLM 变量），**少一个后端就起不来**——配置是在 import 时就校验的。没有可用的 OpenAI 兼容接口就没法启动，AI 助手不是可选项。
 
-启动，表会自动建出来：
+**注册时可以验证邮箱，手机号仍要在登录后绑定。** 注册页填邮箱并收验证码，注册成功后这个邮箱就能直接用于验证码登录；手机号到「个人信息」里填，管理员也可以在「用户管理」里直接设置。邮箱和手机号在数据库里是唯一的，同一个联系方式不能绑到两个账号上。
+
+先把表升到最新（启动服务**不会**再自动建表了）：
+
+```bash
+.venv\Scripts\python -m app.migrate
+```
+
+再启动：
 
 ```bash
 .venv\Scripts\python -m uvicorn app.main:app --reload
 ```
+
+> 如果嫌每次两步麻烦，在 `backend/.env` 里加一行 `AUTO_MIGRATE=true`，就恢复成"启动时自动升到最新"。它内部有 MySQL `GET_LOCK`，多进程同时启动会排队；但正式部署仍然推荐用 compose 的 `migrate` 服务，迁移失败能一眼看到，不会藏在后端日志里。
 
 > 上面这种 `.venv\Scripts\python` 是 Windows 写法，本节和后面「测试」一节里的命令都是这样。macOS / Linux 上把它换成 `.venv/bin/python`，或者先 `source .venv/bin/activate`，之后直接用裸 `python` 就行。
 
@@ -321,15 +340,56 @@ ls -lh /opt/lab-agent/backups/
 之后才改名，所以中途失败的半个文件不会冒充「最近一份备份」；`set -o pipefail` 保证 mysqldump 失败
 不会被 gzip 的成功退出码盖住。
 
-恢复（**先把目标库清空再导入**）：
+#### 恢复演练（建议上线前做一次）
+
+备份没恢复过就不算备份。`scripts/restore-db.sh` 默认只恢复到测试库
+`lab_agent_restore_test`，不会碰正式库；库名不以 `_restore_test` 结尾时脚本直接拒绝，
+想恢复正式库必须显式加 `ALLOW_PROD_RESTORE=yes` 并手动输入 `yes` 确认。
 
 ```bash
-gunzip < backups/lab_agent-20261017-032015.sql.gz | docker compose exec -T mysql sh -c \
-  'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 lab_agent'
+cd /opt/lab-agent
+# 1. 刚备份出来的文件恢复到测试库
+./scripts/restore-db.sh backups/lab_agent-20261017-032015.sql.gz
+
+# 2. 脚本最后会打印 labs / equipments / users / reservation / notifications 的行数。
+#    拿它和正式库对一下（同一个查询）：行数对得上，说明这份备份是完整的。
+docker compose exec -T mysql sh -c \
+  'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" --default-character-set=utf8mb4 lab_agent -e "
+    SELECT \"labs\" AS t, COUNT(*) FROM labs
+    UNION ALL SELECT \"users\", COUNT(*) FROM users
+    UNION ALL SELECT \"reservation\", COUNT(*) FROM reservation;"'
+
+# 3. 确认完删掉测试库
+docker compose exec -T mysql sh -c \
+  'exec mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "DROP DATABASE lab_agent_restore_test"'
+```
+
+真正的灾难恢复（会覆盖正式库）：
+
+```bash
+docker compose stop backend
+ALLOW_PROD_RESTORE=yes ./scripts/restore-db.sh backups/<文件>.sql.gz lab_agent
+docker compose start backend
 ```
 
 **局限要说清楚**：备份和数据库在同一台机器上，能救「误删库、某张表写坏了」，救不了「整台服务器没了」。
 建议每周从服务器下载一份到自己的电脑。
+
+### 错误监控（可选）
+
+后端支持 Sentry。不配 DSN 时完全关闭，连 SDK 都不会 import；配了之后所有走到全局兜底的
+**500** 会上报（业务 400/401/403 不报，避免把正常拒绝刷成故障）。日志里仍然照常打印堆栈。
+
+在服务器 `.env` 里加：
+
+```bash
+SENTRY_DSN=https://你的DSN
+SENTRY_ENVIRONMENT=production
+SENTRY_TRACES_SAMPLE_RATE=0
+```
+
+然后 `docker compose up -d --build backend`。发送请求体是明确关闭的（`max_request_body_size="never"`），
+登录接口的明文密码不会被带上去。
 
 ### 性能
 
@@ -433,7 +493,7 @@ backend/
     common/        统一响应体和异常处理
     dependencies/  登录态、管理员校验
   migrations/      Alembic 迁移，表结构的每一次变更都落在这里
-  tests/           228 条用例
+  tests/           343 条用例
   demo_data.sql    实验室 / 设备基础数据
   scripts/         演示预约数据生成、AI 评测集（eval_agent.py + eval_questions.json）
   Dockerfile
@@ -450,6 +510,7 @@ frontend/
 scripts/
   init-demo.sh     一键初始化：灌数据 + 注册账号 + 造演示预约
   backup-db.sh     导出 MySQL 到 backups/（配合同目录的 systemd timer，每天 3:20）
+  restore-db.sh    恢复备份到测试库，用来做恢复演练（默认不碰正式库）
   bench.py         只读接口压测，只依赖标准库
 docs/              图标和界面截图
 docker-compose.yml MySQL + 后端 + 前端
@@ -485,7 +546,11 @@ body 里的 `code` 有一套约定，照着它就能分清"这次请求哪里不
 
 **429 会告诉你还要等几秒。** 响应头带 `Retry-After`（秒），body 里那句提示也写着秒数。没有它的话，用户只知道"太频繁了"，不知道等三秒还是一分钟，最容易的做法就是马上再点一次，然后继续吃 429。
 
-**登录按「IP + 账号」计数，别人试错密码不会把你锁住。** 同一个账号在同一个 IP 上 5 次/分钟，超了就要等一分钟。额度只跟着"这个 IP 上的这个账号"走——校园网、公司网几十个人共用一个出口 IP 时，同事连错几次密码，不会连累你登录。另外还有一条按 IP 的 60 次/分钟兜底，专门挡"同一个 IP 换着账号撞库"，给得宽就是因为共用出口 IP 的场景。
+**登录按「IP + 账号」计数，别人试错密码不会把你锁住。** 同一个账号在同一个 IP 上 5 次/分钟，超了就要等一分钟。额度只跟着"这个 IP 上的这个账号"走——校园网、公司网几十个人共用一个出口 IP 时，同事连错几次密码，不会连累你登录。另外还有一条按 IP 的 60 次/分钟兜底，专门挡"同一个 IP 换着账号撞库"，给得宽就是因为共用出口 IP 的场景。手机号和邮箱验证码登录也共用这套计数，标识换成手机号或邮箱。
+
+**预约结果同时进站内信和邮箱，但邮件发不出去不影响审核结果。** 站内消息和预约状态在同一个事务里提交，要么都成功要么都失败；邮件在后台线程里发，SMTP 没配、超时或报错都只记一条日志，不会把"审核通过"拖成十秒，更不会回滚。站内消息按用户隔离，接口只认当前登录人——拿别人的消息 ID 去标记已读，只会得到"消息不存在"，不泄露这条消息属于谁。消息页和顶栏铃铛共用同一份接口，未读数每 30 秒拉一次，点开铃铛时才取最近 5 条。
+
+**邮箱验证码：登录和注册分开，只存哈希，5 分钟过期，一次一用，最多错 5 次。** 验证码存在 MySQL 的 `verification_codes` 表里，按「邮箱 + 场景」区分：注册码不能拿去登录，登录码也不能拿去注册。发新码会把同一邮箱、同一场景的旧码作废；同一邮箱 60 秒内只能发一次，避免把 SMTP 当成刷接口的工具。邮件发送失败时那条验证码记录会回滚，不会留下"用户收不到码、还被冷却 60 秒"的状态。
 
 **改密码会把这个人所有设备踢下线。** 每张令牌里带着签发那一刻的令牌版本号（`users.token_version`），改密码时版本号 +1，旧令牌下一个请求就在 `dependencies/auth.py` 里对不上号被拒。这个比对不额外查库——鉴权本来每个请求就要查一次用户。注意"立刻失效"的准确含义是**下一个请求即失效**，没有推送通道，纯打开的标签页要等它下次发请求才会被踢。管理员重置他人密码（`PUT /api/user/{id}/password`）走的是同一套：重置同样 +1，否则"号被盗了"这个场景下重置等于没做。
 
@@ -494,12 +559,11 @@ body 里的 `code` 有一套约定，照着它就能分清"这次请求哪里不
 ## 已知限制
 
 - **限流计数在 Redis（Docker 部署默认如此）**，多进程/多实例共用一份，**后端**重启不清零。注意 Redis 容器或整机重启会清零——计数刻意不落盘（没有挂卷、关了 RDB/AOF），因为丢了最坏只是重置一分钟的额度。代价是多了一个要维护的容器；Redis 挂了会退回各进程自己的内存计数——网站照常可用，但那段多实例部署时会变成"每台各算一份"。
-- **下线是"一锅端"，踢不了单独某一台设备。** 改密码让该用户**全部**旧令牌失效，做不到"只踢被盗的那一台、保留其他设备"。要精确到单枚令牌得引入会话表，那是另一件事。
-- **登出只清浏览器，不通知后端。** 没有 logout 接口，退出登录就是删掉本地令牌，那枚令牌在过期前（默认 24 小时）仍然有效。想让它立刻作废只能改密码。
-- **迁移在服务启动时执行，假设单进程。** uvicorn 开多 worker 时每个进程都会跑一遍，并发 DDL 会撞车；要让多 worker 同时启动，得把 `run_migrations()` 从 lifespan 挪到部署流程里单独执行，或者用 MySQL 的 `GET_LOCK` 包一层（`reservation_service` 里已有现成用法）。
-- **单进程的吞吐上限约 200 RPS**（实测 180~280，见上面「性能」）。这不是调参能补的，要先解决上一条。
+- **登出和改密码一样，是"一锅端"，踢不了单独某一台设备。** 两者都会让该用户**全部**旧令牌失效，做不到"只踢被盗的那一台、保留其他设备"。要精确到单枚令牌得引入会话表，那是另一件事。好处是退出登录后那枚令牌**立刻**作废，不再能用到过期。
+- **单进程的吞吐上限约 200 RPS**（实测 180~280，见上面「性能」）。数据库迁移已经挪出启动流程（compose 的 `migrate` 服务单独跑，多进程同时启动不会抢 DDL），但知识库重建锁和 embedding 模型还在进程内存里，所以后端仍是单进程。要开多 worker，得先把这两处挪到进程外。
 - **关掉标签页后，这一轮回答会停在那里。** 内容不会丢（`finally` 里落了库），但后端不会接着写完，重新打开看到的是半截。已计划改成后台任务继续生成。
 - **对话历史每人最多留 50 个会话**（按会话裁，不是按消息条数），超了删最旧的。
+- **站内消息只增不删。** 目前没有保留期和清理任务，消息会一直留在 `notifications` 表里。数据量真的大到需要时，再加按用户/时间的归档。
 - 没有 pre-commit 钩子。（CI 和 Docker 都补上了：前者是 GitHub Actions 跑前后端各一个 job，后者见上面「跑起来」。）
 
 ## 界面
