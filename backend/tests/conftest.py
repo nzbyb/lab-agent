@@ -110,6 +110,7 @@ from app.models.lab import Lab  # noqa: E402
 from app.models.reservation import Reservation  # noqa: E402,F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: E402,F401
 from app.models.verification import VerificationCode  # noqa: E402,F401
+from app.models.notification import Notification  # noqa: E402,F401
 from app.models.user import User  # noqa: E402
 from app.schemas.reservation import ReservationCreateRequest  # noqa: E402
 from app.services import kb_service  # noqa: E402

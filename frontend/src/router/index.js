@@ -25,6 +25,11 @@ const router = createRouter({
           component: () => import('@/views/MyReservation.vue')
         },
         { path: 'ai-chat', name: 'AIChat', component: () => import('@/views/AIChat.vue') },
+        {
+          path: 'notifications',
+          name: 'Notifications',
+          component: () => import('@/views/NotificationList.vue')
+        },
 
         // 下面这 4 条的 meta.role 名单，跟后端 dependencies/auth.py 里
         // get_current_admin 的名单严格一致：后端只允许 admin 调用的那几组接口，
@@ -61,6 +66,11 @@ const router = createRouter({
     },
     { path: '/login', name: 'Login', component: () => import('@/views/Login.vue') },
     { path: '/register', name: 'Register', component: () => import('@/views/Register.vue') },
+    {
+      path: '/forgot-password',
+      name: 'ForgotPassword',
+      component: () => import('@/views/ForgotPassword.vue')
+    },
     // 兜底路由必须放最后：前面所有路径都没匹配上才轮到它。
     // 改造前没有这条，任何拼错的地址（比如菜单里写错的 /manager/lablist）都会
     // 渲染成一片空白，看起来像"点了没反应"。
@@ -73,8 +83,9 @@ const router = createRouter({
 })
 
 router.beforeEach((to) => {
-  // 登录页和注册页本身不需要登录态
-  if (to.path === '/login' || to.path === '/register') {
+  // 登录、注册、找回密码这三页本身不需要登录态。
+  // 找回密码尤其不能要求登录——忘记密码的人正是登不进来的那批人。
+  if (to.path === '/login' || to.path === '/register' || to.path === '/forgot-password') {
     return true
   }
   if (!getToken()) {
