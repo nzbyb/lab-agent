@@ -42,11 +42,11 @@ def get_current_user(
     # 而老库迁移时 token_version 一律补 0，两边都按 0 算就对得上，所以部署这一版不会
     # 把已登录的人全踢下线。代价是上线前就改过密码、握着旧令牌的人要等下次改密码才失效。
     #
-    # ⚠️ 文案约束：「密码已变更」这句话只有在"版本号仅因密码事件自增"时才成立。
-    # 将来如果给角色调整、强制下线、封号也复用这个 +1，就得改成中性文案，否则它在撒谎。
+    # 改密码、重置密码、退出登录都会让这一列 +1，所以文案只能是中性的
+    # "登录已失效"——写"密码已变更"会在用户只是点了退出登录时撒谎。
     if payload.get("ver", 0) != (user.token_version or 0):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="密码已变更，请重新登录"
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效，请重新登录"
         )
     return user
 

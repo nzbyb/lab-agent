@@ -29,6 +29,41 @@ class Settings(BaseSettings):
     # "稍后再试"，不排队——排队只会把连接和内存继续占着。
     AI_MAX_CONCURRENCY: int = 3
 
+    # 已通过的预约，距离开始时间还剩这么多小时以上，本人才能自行取消。
+    # 再近就锁住：临时空出来的时段管理员也来不及安排给别人，直接放鸽子更省事，
+    # 但这条规矩要写进知识库和界面提示，否则用户会觉得按钮莫名其妙变灰。
+    RESERVATION_CANCEL_DEADLINE_HOURS: int = 2
+
+    # 是否允许应用启动时自动跑数据库迁移。
+    # 默认关闭：正常部署由 compose 的 migrate 服务（python -m app.migrate）先跑，
+    # 后端只负责起服务。多 worker/多副本同时启动时，每个进程都跑一遍 DDL 会撞车。
+    # 本机开发如果想恢复"启动即建表"的省事模式，在 backend/.env 里设 true。
+    AUTO_MIGRATE: bool = False
+
+    # ---------- 错误监控（Sentry，可选） ----------
+    # 留空 = 完全关闭，不加载任何监控代码。填了 DSN 才启用。
+    # traces_sample_rate=0 表示只收错误、不收性能追踪（性能追踪会明显增加额度和开销）。
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = "production"
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0
+
+    # ---------- 邮件（QQ 邮箱验证码注册、登录） ----------
+    # 留空 = 邮箱验证码不可用，其余登录方式和旧注册方式不受影响。
+    # QQ 邮箱这里填的是「SMTP 授权码」，不是 QQ 登录密码。
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 465
+    # QQ 邮箱 465 端口走 SSL；587 端口一般走 STARTTLS，把这一项设成 False。
+    SMTP_USE_SSL: bool = True
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_NAME: str = "智能实验室预约系统"
+    SMTP_TIMEOUT: int = 10
+
+    # 验证码有效期、同一邮箱两次获取的最小间隔、最多允许输错几次。
+    EMAIL_CODE_EXPIRE_MINUTES: int = 5
+    EMAIL_CODE_COOLDOWN_SECONDS: int = 60
+    EMAIL_CODE_MAX_ATTEMPTS: int = 5
+
     model_config = SettingsConfigDict(
         env_file=BASE_DIR / ".env", env_file_encoding="utf-8"
     )

@@ -1,98 +1,143 @@
 <template>
-  <div class="login-page">
-    <!-- 左：品牌区。窄屏下变成顶部横幅，见文件末尾的 @media -->
-    <div class="brand-panel">
-      <div class="brand-inner">
-        <div class="brand-mark">
-          <img src="@/assets/imgs/logo.svg" alt="智能实验室预约系统" />
-        </div>
-        <h1 class="brand-title">智能实验室预约系统</h1>
-        <p class="brand-subtitle">FastAPI + Vue 3 · AI Agent 驱动的实验室预约与管理平台</p>
-        <ul class="brand-features">
-          <li>
-            <el-icon><Calendar /></el-icon>
-            <span>在线预约实验室与设备，各时段空闲情况一目了然</span>
-          </li>
-          <li>
-            <el-icon><MagicStick /></el-icon>
-            <span>AI 智能助手对话式预约，自动查数据、代提交</span>
-          </li>
-          <li>
-            <el-icon><Reading /></el-icon>
-            <span>知识库问答，预约规则与安全规范随手可查</span>
-          </li>
-          <li>
-            <el-icon><DocumentChecked /></el-icon>
-            <span>预约审核与账号、设备管理，管理员统一处理</span>
-          </li>
-        </ul>
-      </div>
-    </div>
+  <div class="auth-page">
+    <!-- 左：品牌区。跟注册页共用 components/AuthBrandPanel.vue，
+         窄屏下变成顶部横幅（样式在那个组件里）。 -->
+    <AuthBrandPanel />
 
-    <!-- 右：登录表单。表单结构和提交逻辑与改造前完全一致 -->
-    <div class="form-panel">
-      <div class="form-inner">
-        <h2 class="form-title">欢迎回来</h2>
-        <p class="form-subtitle">请登录你的账号以继续使用</p>
+    <!-- 右：登录表单。密码登录同时接受账号和手机号，另一种是邮箱验证码。 -->
+    <div class="auth-form-panel">
+      <div class="auth-form-inner">
+        <h2 class="auth-form-title">欢迎回来</h2>
+        <p class="auth-form-subtitle">请选择一种登录方式</p>
 
-        <!-- name 必须显式写：el-input 声明了 name prop，但不传就是 undefined，
-             渲染出来的 <input> 上根本没有 name 属性（实测过）。autocomplete 是
-             "这个字段是什么"的语义提示，name 才是密码管理器和浏览器自动填充
-             一直在认的传统信号，两个一起给才稳。
-             另外 el-form 渲染成的是真的 <form>，但 el-button 的 native-type 默认是
-             button，所以这个表单里没有提交按钮。注意"没有提交按钮"本身**不**能
-             阻止回车提交——没有提交按钮时，浏览器的隐式提交规则才生效：
-             "表单里恰好只有一个会阻断隐式提交的字段才提交，多于一个就什么都不做"。
-             真正让回车失效的是下面有账号、密码**两个**这类字段。
-             （提交只走这两个 @keyup.enter。） -->
-        <el-form ref="formRef" :rules="rules" :model="form" label-width="0px" class="login-form">
-          <el-form-item prop="username">
-            <!-- autocapitalize / autocorrect / spellcheck 三条一起关掉。
-                 账号是**一字不差**比对的（后端 `User.username == 提交值`），而手机上的软键盘
-                 默认会把句首字母自动大写、还会"顺手纠正"拼写：`demo` 变成 `Demo`，登录就报
-                 "账号或密码错误"——报错和真实原因对不上，用户很难自己想明白。
-                 上面既然给了 name/autocomplete 让浏览器更愿意自动填充，这三条就更不能省。 -->
-            <el-input
-              size="large"
-              v-model="form.username"
-              placeholder="请输入账号"
-              :prefix-icon="User"
-              autofocus
-              name="username"
-              autocomplete="username"
-              autocapitalize="off"
-              autocorrect="off"
-              spellcheck="false"
-              @keyup.enter="login"
-            />
-          </el-form-item>
-          <el-form-item prop="password">
-            <el-input
-              type="password"
-              size="large"
-              v-model="form.password"
-              placeholder="请输入密码"
-              :prefix-icon="Lock"
-              show-password
-              name="password"
-              autocomplete="current-password"
-              autocapitalize="off"
-              autocorrect="off"
-              @keyup.enter="login"
-            />
-          </el-form-item>
-          <el-button
-            size="large"
-            type="primary"
-            class="login-button"
-            @click="login"
-            :loading="loadingValue"
-            >登 录</el-button
-          >
-        </el-form>
+        <el-tabs v-model="loginMode" class="login-tabs" stretch>
+          <el-tab-pane label="密码登录" name="password">
+            <!-- name 必须显式写：el-input 声明了 name prop，但不传就是 undefined，
+                 渲染出来的 <input> 上根本没有 name 属性（实测过）。autocomplete 是
+                 "这个字段是什么"的语义提示，name 才是密码管理器和浏览器自动填充
+                 一直在认的传统信号，两个一起给才稳。
+                 另外 el-form 渲染成的是真的 <form>，但 el-button 的 native-type 默认是
+                 button，所以这个表单里没有提交按钮。回车提交由下面两个 @keyup.enter
+                 显式处理。 -->
+            <el-form
+              ref="passwordFormRef"
+              :rules="passwordRules"
+              :model="passwordForm"
+              label-width="0px"
+              class="login-form"
+              @submit.prevent
+            >
+              <el-form-item prop="account">
+                <!-- autocapitalize / autocorrect / spellcheck 三条一起关掉。
+                     账号是**一字不差**比对的（后端 `User.username == 提交值`），而手机上的软键盘
+                     默认会把句首字母自动大写、还会"顺手纠正"拼写：`demo` 变成 `Demo`，登录就报
+                     "账号或密码错误"——报错和真实原因对不上，用户很难自己想明白。
+                     上面既然给了 name/autocomplete 让浏览器更愿意自动填充，这三条就更不能省。 -->
+                <el-input
+                  size="large"
+                  v-model="passwordForm.account"
+                  placeholder="账号或手机号"
+                  :prefix-icon="User"
+                  autofocus
+                  name="username"
+                  autocomplete="username"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  @keyup.enter="loginWithPassword"
+                />
+              </el-form-item>
+              <el-form-item prop="password">
+                <el-input
+                  type="password"
+                  size="large"
+                  v-model="passwordForm.password"
+                  placeholder="请输入密码"
+                  :prefix-icon="Lock"
+                  show-password
+                  name="password"
+                  autocomplete="current-password"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  @keyup.enter="loginWithPassword"
+                />
+              </el-form-item>
+              <!-- 只挂在密码登录这一栏：邮箱验证码登录的人本来就能收信，
+                   不需要"找回密码"这条路。 -->
+              <div class="login-forgot">
+                <router-link to="/forgot-password">忘记密码？</router-link>
+              </div>
+              <el-button
+                size="large"
+                type="primary"
+                class="auth-submit"
+                @click="loginWithPassword"
+                :loading="passwordLoading"
+                >登 录</el-button
+              >
+            </el-form>
+          </el-tab-pane>
 
-        <div class="register-line">
-          还没有账号？<router-link class="register-link" to="/register">立即注册</router-link>
+          <el-tab-pane label="邮箱验证码" name="email">
+            <el-form
+              ref="emailFormRef"
+              :rules="emailRules"
+              :model="emailForm"
+              label-width="0px"
+              class="login-form"
+              @submit.prevent
+            >
+              <el-form-item prop="email">
+                <el-input
+                  size="large"
+                  v-model="emailForm.email"
+                  placeholder="QQ 邮箱"
+                  :prefix-icon="Message"
+                  name="email"
+                  autocomplete="email"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  @keyup.enter="sendEmailCode"
+                />
+              </el-form-item>
+              <el-form-item prop="code">
+                <div class="code-row">
+                  <el-input
+                    size="large"
+                    v-model="emailForm.code"
+                    placeholder="6 位验证码"
+                    maxlength="6"
+                    name="one-time-code"
+                    autocomplete="one-time-code"
+                    inputmode="numeric"
+                    @keyup.enter="loginWithEmailCode"
+                  />
+                  <el-button
+                    class="code-button"
+                    size="large"
+                    :loading="sendingCode"
+                    :disabled="countdown > 0 || sendingCode"
+                    @click="sendEmailCode"
+                  >
+                    {{ countdown > 0 ? `${countdown} 秒` : '获取验证码' }}
+                  </el-button>
+                </div>
+              </el-form-item>
+              <el-button
+                size="large"
+                type="primary"
+                class="auth-submit"
+                @click="loginWithEmailCode"
+                :loading="emailLoading"
+                >登 录</el-button
+              >
+            </el-form>
+          </el-tab-pane>
+        </el-tabs>
+
+        <div class="auth-form-footer">
+          还没有账号？<router-link to="/register">立即注册</router-link>
         </div>
       </div>
     </div>
@@ -100,289 +145,191 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
-import { User, Lock, Calendar, MagicStick, Reading, DocumentChecked } from '@element-plus/icons-vue'
+import { reactive, ref, onBeforeUnmount } from 'vue'
+import { User, Lock, Message } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import AuthBrandPanel from '@/components/AuthBrandPanel.vue'
 import router from '@/router'
-import { loginApi } from '@/api/auth'
+import { loginApi, loginByPhoneApi, sendEmailCodeApi, loginByEmailCodeApi } from '@/api/auth'
 import { useUserStore } from '@/stores/user'
 
 const userStore = useUserStore()
 
-const formRef = ref()
+// 密码这一栏同时收账号和手机号。后端是两条接口：长得像手机号就走手机号登录，
+// 否则按账号登录。这样界面上不用再多一个标签页，用户也不用先想"我这是哪种账号"。
+const PHONE_RE = /^1[3-9]\d{9}$/
 
-const form = reactive({
-  username: '',
+const loginMode = ref('password')
+const passwordFormRef = ref()
+const emailFormRef = ref()
+
+const passwordForm = reactive({
+  account: '',
   password: ''
 })
 
-const loadingValue = ref(false)
+const emailForm = reactive({
+  email: '',
+  code: ''
+})
 
-const rules = {
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+const passwordLoading = ref(false)
+const emailLoading = ref(false)
+const sendingCode = ref(false)
+const countdown = ref(0)
+let countdownTimer = null
+
+const passwordRules = {
+  account: [{ required: true, message: '请输入账号或手机号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
-const login = async () => {
-  const valid = await formRef.value.validate().catch(() => false)
+const emailRules = {
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
+  ],
+  code: [
+    { required: true, message: '请输入验证码', trigger: 'blur' },
+    { pattern: /^\d{6}$/, message: '请输入 6 位数字验证码', trigger: 'blur' }
+  ]
+}
+
+const startCountdown = (seconds) => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+  }
+  countdown.value = Math.max(1, Number(seconds) || 60)
+  countdownTimer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0) {
+      clearInterval(countdownTimer)
+      countdownTimer = null
+    }
+  }, 1000)
+}
+
+onBeforeUnmount(() => {
+  if (countdownTimer) {
+    clearInterval(countdownTimer)
+  }
+})
+
+const finishLogin = async (res) => {
+  if (res.code === 200) {
+    userStore.saveLoginData(res.data)
+    ElMessage.success('登录成功')
+    await router.push('/manager/home')
+  }
+}
+
+const loginWithPassword = async () => {
+  const valid = await passwordFormRef.value.validate().catch(() => false)
   if (!valid) {
     return
   }
-  loadingValue.value = true
+  const account = passwordForm.account.trim()
+  // 跟后端 normalize_phone 一样，先容忍用户从别处粘贴进来的空格和横线
+  const phone = account.replace(/[\s-]/g, '')
+  passwordLoading.value = true
   try {
-    const res = await loginApi(form)
-
-    if (res.code === 200) {
-      userStore.saveLoginData(res.data)
-      ElMessage.success('登录成功')
-      await router.push('/manager/home')
-    }
+    const res = PHONE_RE.test(phone)
+      ? await loginByPhoneApi({ phone, password: passwordForm.password })
+      : await loginApi({ username: account, password: passwordForm.password })
+    await finishLogin(res)
   } catch {
     // 失败提示由 request 拦截器统一弹出（业务错误走 HTTP 200 + body.code）。
-    // 两点实情，写在这里是为了不误导下一个读代码的人：
-    // 1) 密码输错走的是 body.code=500 且 HTTP 200，拦截器弹完提示后是
-    //    return data（resolve），那条路径本来就不会产生未捕获 rejection；
-    //    真正会 reject 的是网络不通和 HTTP 4xx/5xx。
-    // 2) request.js 里 HTTP 401 那条会先弹一句后端的 message、再 logout + 跳转，
-    //    它的 rejection 也会被这里一并吞掉。正常情况 /api/auth/login 不返回 401
-    //    （账号密码错是 body.code=500 + HTTP 200），先这样。
+    // 这里只吞掉 rejection，防止控制台出现未捕获异常。
   } finally {
-    loadingValue.value = false
+    passwordLoading.value = false
+  }
+}
+
+const sendEmailCode = async () => {
+  // 只校验邮箱这一项，不要求验证码先填好——用户就是还没收到码才来点它。
+  const valid = await emailFormRef.value
+    .validateField('email')
+    .then(() => true)
+    .catch(() => false)
+  if (!valid) {
+    return
+  }
+  sendingCode.value = true
+  try {
+    const res = await sendEmailCodeApi({ email: emailForm.email.trim() })
+    if (res.code === 200) {
+      ElMessage.success('验证码已发送，请查收邮箱')
+      startCountdown(res.data?.cooldown)
+    }
+  } catch {
+    // HTTP 429（发信太频繁）和网络异常由 request 拦截器统一提示。
+  } finally {
+    sendingCode.value = false
+  }
+}
+
+const loginWithEmailCode = async () => {
+  const valid = await emailFormRef.value.validate().catch(() => false)
+  if (!valid) {
+    return
+  }
+  emailLoading.value = true
+  try {
+    const res = await loginByEmailCodeApi({
+      email: emailForm.email.trim(),
+      code: emailForm.code.trim()
+    })
+    await finishLogin(res)
+  } catch {
+    // 同上：提示已由 request 拦截器统一处理。
+  } finally {
+    emailLoading.value = false
   }
 }
 </script>
 
 <style scoped>
-.login-page {
-  display: flex;
-  min-height: 100vh;
-}
-
-/* ---------------------------------------------------------------------------
- * 左：品牌区
- *
- * 渐变终点取的是 Element Plus 的主色 #409eff，让这块和登录后各页面的主色
- * 是同一个蓝，不是另起一套配色。
- * ------------------------------------------------------------------------- */
-.brand-panel {
-  position: relative;
-  overflow: hidden;
-  flex: 1 1 55%;
-  display: flex;
-  align-items: center;
-  /* 右边多留 140px，比下面的渐隐带（120px）宽：把内容挡在渐隐带之外。
-   * 少了这 20px 余量，文字右端会飘到正在变白的区域上，白字白底直接消失。 */
-  padding: 60px 140px 60px 60px;
-  color: #fff;
-  /* 第一层（写在前面 = 画在上面）把右边缘 120px 从全透明渐变到纯白，
-   * 第二层才是蓝色渐变。叠加结果是蓝色自己溶进白色里——两栏之间不再有
-   * 那条硬边，而不是在硬边旁边补一层淡色（上一版就是这么做的，等于没做）。
-   * 背景画在子元素之下，所以文字和图标不受影响。 */
-  background-image:
-    linear-gradient(90deg, rgba(255, 255, 255, 0) calc(100% - 120px), #ffffff 100%),
-    linear-gradient(135deg, #1a3d7c 0%, #2f6fd0 55%, #409eff 100%);
-}
-
-/* 左下角的两个浅色圆弧，纯装饰 */
-.brand-panel::before,
-.brand-panel::after {
-  content: '';
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  pointer-events: none;
-}
-
-.brand-panel::before {
-  width: 460px;
-  height: 460px;
-  right: -140px;
-  bottom: -200px;
-}
-
-.brand-panel::after {
-  width: 280px;
-  height: 280px;
-  right: 60px;
-  bottom: -210px;
-}
-
-.brand-inner {
-  position: relative; /* 压在装饰圆弧之上 */
-  z-index: 1;
+/* 左右分栏的外框、右侧表单的标题与主按钮等共用样式都在 global.css 的
+   「登录 / 注册页的公共骨架」一节；这里只留登录页独有的标签栏和验证码行。 */
+.login-tabs {
   width: 100%;
-  max-width: 460px;
-  margin: 0 auto;
 }
 
-/* logo 现在是自带圆角蓝底的 SVG，图形铺满整块画布、四周没有白边，
- * 所以这里不再需要白色垫块，也不需要放大裁切。
- * （旧图是 1280×1706 的白底 jpg，图形只占中间 37.5%×23.8% 一块，
- * 当年要靠 White 垫块 + scale(2.3) 才能把图形顶出来。） */
-.brand-mark {
-  width: 84px;
-  height: 84px;
-  /* 图标自身是圆角透明的，box-shadow 会照方形元素画出一圈直角阴影，
-   * drop-shadow 才是跟着图标轮廓走的。 */
-  filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.18));
-}
-
-.brand-mark img {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-/* 两级标题的字号都在这里显式写死，不靠 h1/h2 的浏览器默认值。
- * 改造前那版有一个不生效的 <h1 font-size="28px"> HTML 属性，是靠 h1 默认
- * 2em × body 14px 恰好等于 28px 才"看起来没坏"。别再依赖这种巧合。 */
-/* 字号随视口自适应，不是"为了好看"，是为了修一条断点缝。
- *
- * 断点在 900px（下面的媒体查询只管 max-width: 900px），所以 901px 起仍是左右分栏。
- * 左栏占 55% 宽、左右内边距 60+140=200px，于是 .brand-inner 的可用宽度是
- * "55% × 视口 − 200"：901px 时只有 295.6px，一直到 936px 也才涨到 314.8px。
- * 而标题"智能实验室预约系统"9 个字在 34px 下的实宽是
- *   9 × 34px（字身） + 9 × 1px（letter-spacing）= 315px
- * ——字距 9px 不能漏，漏了会算成 306px，结论就偏了。
- * 315px 要放得下来，视口得到 937px（55%×937−200 = 315.4）。
- * 也就是说 901~936px 这一整段都放不下，标题被硬折成两行
- * （实测标题高 88px vs 一行时的 44px，正是 34px × 1.3 行高的两倍）。
- * 用 clamp 让它在这段里缩到 24px 出头就放得下了（24px 时实宽仅 225px）。
- *
- * 1440px 时 2.6vw = 37.4px，被上限卡回 34px，观感与改造后完全一致。
- * 900px 以下由文件末尾的媒体查询接管（那里显式写 22px，在后、同权重，会盖过这条）。 */
-.brand-title {
-  font-size: clamp(24px, 2.6vw, 34px);
-  line-height: 1.3;
-  letter-spacing: 1px;
-}
-
-.brand-subtitle {
-  margin-top: 12px;
-  font-size: 14px;
-  line-height: 1.7;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.brand-features {
-  margin-top: 30px;
-}
-
-.brand-features li {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 14px 0;
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.92);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.brand-features li:last-child {
-  border-bottom: none;
-}
-
-/* 图标默认跟着 li 的 15px，比正文还轻；单给到 18px。
- * flex: none 是不让它被右侧长文案挤扁（li 本身是 flex 容器）。 */
-.brand-features li .el-icon {
-  flex: none;
-  font-size: 18px;
-}
-
-/* ---------------------------------------------------------------------------
- * 右：登录表单
- * ------------------------------------------------------------------------- */
-.form-panel {
-  flex: 1 1 45%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 40px;
-  /* 回到纯白：左栏已经自己渐隐到白了，这里再铺一层淡蓝，反倒会在交界处
-   * 冒出一条"白 → 淡蓝 → 白"的反向色带。 */
-  background-color: #fff;
-}
-
-.form-inner {
-  width: 100%;
-  max-width: 360px;
-}
-
-.form-title {
-  font-size: 28px;
-}
-
-.form-subtitle {
-  margin-top: 8px;
-  margin-bottom: 30px;
-  font-size: 14px;
-  color: var(--app-text-secondary);
+/* 标签栏和表单之间留一点呼吸，别让输入框贴着标签下划线 */
+.login-tabs :deep(.el-tabs__header) {
+  margin-bottom: 22px;
 }
 
 .login-form {
   width: 100%;
 }
 
-.login-button {
-  width: 100%;
-  border-radius: var(--app-radius-md);
-}
-
-.register-line {
-  margin-top: 20px;
+/* 密码框和登录按钮之间的那一行。负 margin 把 el-form-item 自带的下边距
+   抵掉一点，不然按钮会离密码框太远，看起来像两段。 */
+.login-forgot {
+  margin: -6px 0 16px;
   text-align: right;
-  font-size: 14px;
-  color: var(--app-text-secondary);
+  font-size: 13px;
 }
 
-.register-link {
+.login-forgot a {
   color: var(--el-color-primary);
 }
 
-/* ---------------------------------------------------------------------------
- * 窄屏：改成上下堆叠。品牌区只剩 logo + 标题当横幅，特性列表隐藏——
- * 手机上那 4 条会把登录框挤出首屏。
- * ------------------------------------------------------------------------- */
-@media (max-width: 900px) {
-  .login-page {
-    flex-direction: column;
-    /* 手机上 100vh 是"地址栏收起后"的高度，地址栏一露出来页面底部就被推出去。
-       dvh 跟着可视区实时变；不认 dvh 的老浏览器退回上一行。 */
-    min-height: 100vh;
-    min-height: 100dvh;
-  }
+.code-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
 
-  .brand-panel {
-    flex: none;
-    /* 竖排后交界线是横的，渐隐带跟着转到底部 */
-    padding: 32px 24px 90px;
-    background-image:
-      linear-gradient(180deg, rgba(255, 255, 255, 0) calc(100% - 80px), #ffffff 100%),
-      linear-gradient(135deg, #1a3d7c 0%, #2f6fd0 55%, #409eff 100%);
-  }
+.code-row .el-input {
+  flex: 1;
+  min-width: 0;
+}
 
-  .brand-inner {
-    max-width: none;
-  }
-
-  .brand-mark {
-    width: 56px;
-    height: 56px;
-  }
-
-  .brand-title {
-    margin-top: 16px;
-    font-size: 22px;
-  }
-
-  .brand-subtitle,
-  .brand-features {
-    display: none;
-  }
-
-  .form-panel {
-    flex: 1;
-    padding: 32px 24px 48px;
-  }
+/* 固定宽度，倒计时变成 "60 秒" 时按钮不会跟着跳 */
+.code-button {
+  flex: none;
+  width: 112px;
 }
 </style>

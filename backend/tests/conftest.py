@@ -53,6 +53,13 @@ os.environ["REDIS_URL"] = ""
 # slowapi 在不传 storage_uri 时会去读这个变量；留着它等于给上面那句开了个后门。
 os.environ.pop("RATELIMIT_STORAGE_URL", None)
 
+# 测试绝不发真实邮件。本机 .env 可能配了真实的 SMTP 授权码，而预约审核
+# 现在会顺带发通知邮件——不清空的话，跑一次用例就会给库里的测试邮箱发信。
+# 需要验证邮件内容的用例自己 monkeypatch notification_service.mailer。
+os.environ["SMTP_HOST"] = ""
+os.environ["SMTP_USER"] = ""
+os.environ["SMTP_PASSWORD"] = ""
+
 # ---------------------------------------------------------------------------
 # 以上必须早于以下所有 import
 # ---------------------------------------------------------------------------
@@ -102,6 +109,7 @@ from app.models.equipment import Equipment  # noqa: E402
 from app.models.lab import Lab  # noqa: E402
 from app.models.reservation import Reservation  # noqa: E402,F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: E402,F401
+from app.models.verification import VerificationCode  # noqa: E402,F401
 from app.models.user import User  # noqa: E402
 from app.schemas.reservation import ReservationCreateRequest  # noqa: E402
 from app.services import kb_service  # noqa: E402
@@ -190,13 +198,23 @@ def client():
 
 @pytest.fixture
 def make_user(db):
-    def _make(username="stu1", password=DEFAULT_PASSWORD, role="student", status=1):
+    def _make(
+        username="stu1",
+        password=DEFAULT_PASSWORD,
+        role="student",
+        status=1,
+        name=None,
+        email=None,
+        phone=None,
+    ):
         user = User(
             username=username,
             password=hash_password(password),
-            name=username,
+            name=name or username,
             role=role,
             status=status,
+            email=email,
+            phone=phone,
         )
         db.add(user)
         db.commit()

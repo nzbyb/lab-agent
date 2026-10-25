@@ -1,4 +1,8 @@
 from operator import or_
+
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
 from app.models.user import User
 from app.schemas.user import (
     UserResponse,
@@ -7,10 +11,48 @@ from app.schemas.user import (
     AdminPasswordResetRequest,
     PasswordUpdateRequest,
 )
-from sqlalchemy.orm import Session
+from app.utils.contact import normalize_optional_email, normalize_optional_phone
 from app.utils.password import hash_password, verify_password
 from app.common.exceptions import BusinessException
 from app.common.response import PageResponse
+
+
+def _ensure_contact_available(
+    db: Session,
+    *,
+    email: str | None,
+    phone: str | None,
+    exclude_user_id: int | None = None,
+) -> None:
+    """邮箱 / 手机号要能唯一定位到一个人，否则登录会落到哪个账号上说不清。
+
+    数据库上还有唯一索引兜底；这里先查一次是为了给出一句人能看懂的提示，
+    而不是把 IntegrityError 变成 500。
+    """
+    if email:
+        query = db.query(User).filter(User.email == email)
+        if exclude_user_id is not None:
+            query = query.filter(User.id != exclude_user_id)
+        if query.first():
+            raise BusinessException(message="邮箱已被其他账号绑定")
+    if phone:
+        query = db.query(User).filter(User.phone == phone)
+        if exclude_user_id is not None:
+            query = query.filter(User.id != exclude_user_id)
+        if query.first():
+            raise BusinessException(message="手机号已被其他账号绑定")
+
+
+def _commit_with_contact_guard(db: Session) -> None:
+    """并发下两个人同时绑同一个邮箱时，唯一索引会抛 IntegrityError。
+
+    概率不高，但不能让它变成 500。
+    """
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise BusinessException(message="邮箱或手机号已被其他账号绑定") from exc
 
 
 def get_user_info(user: User) -> UserResponse:
@@ -23,9 +65,19 @@ def update_user_info(db: Session, user: User, data: UserUpdateRequest):
     # 属性那时已经被赋成 None 了，只改手机号就会让 name 撞 NOT NULL 报 500，
     # 带上 name 时 email/avatar 又被静默清空。
     payload = data.model_dump(exclude_unset=True, exclude={"role", "status"})
+    if "email" in payload:
+        payload["email"] = normalize_optional_email(payload["email"])
+    if "phone" in payload:
+        payload["phone"] = normalize_optional_phone(payload["phone"])
+    _ensure_contact_available(
+        db,
+        email=payload.get("email"),
+        phone=payload.get("phone"),
+        exclude_user_id=user.id,
+    )
     for field, value in payload.items():
         setattr(user, field, value)
-    db.commit()
+    _commit_with_contact_guard(db)
     db.refresh(user)
     return UserResponse.model_validate(user)
 
@@ -91,18 +143,22 @@ def create_user(db: Session, data: UserCreateRequest):
     if exist:
         raise BusinessException(message="账号已存在")
 
+    email = normalize_optional_email(data.email)
+    phone = normalize_optional_phone(data.phone)
+    _ensure_contact_available(db, email=email, phone=phone)
+
     user = User(
         username=data.username,
         password=hash_password(data.password),
         name=data.name,
         role=data.role,
-        email=data.email,
-        phone=data.phone,
+        email=email,
+        phone=phone,
         avatar=data.avatar,
         status=data.status,
     )
     db.add(user)
-    db.commit()
+    _commit_with_contact_guard(db)
     db.refresh(user)
     return UserResponse.model_validate(user)
 
@@ -111,11 +167,23 @@ def update_user(db: Session, user_id: int, data: UserUpdateRequest):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise BusinessException(message="用户不存在")
-    payload = data.model_dump(exclude_none=True)
+    # exclude_unset 而不是 exclude_none：前端清空邮箱/手机号时发的是空串，
+    # 先归一成 None 再写回去；显式传 null 的部分仍然按"没改"处理。
+    payload = data.model_dump(exclude_unset=True, exclude_none=True)
+    if "email" in payload:
+        payload["email"] = normalize_optional_email(payload["email"])
+    if "phone" in payload:
+        payload["phone"] = normalize_optional_phone(payload["phone"])
+    _ensure_contact_available(
+        db,
+        email=payload.get("email"),
+        phone=payload.get("phone"),
+        exclude_user_id=user.id,
+    )
     for filed, value in payload.items():
         setattr(user, filed, value)
 
-    db.commit()
+    _commit_with_contact_guard(db)
     db.refresh(user)
     return UserResponse.model_validate(user)
 

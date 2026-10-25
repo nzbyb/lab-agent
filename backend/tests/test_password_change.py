@@ -50,7 +50,7 @@ class TestPasswordChangeInvalidatesOldTokens:
 
         resp = client.get(ME, headers=headers)
         assert resp.status_code == 401
-        assert resp.json()["message"] == "密码已变更，请重新登录"
+        assert resp.json()["message"] == "登录已失效，请重新登录"
 
     def test_version_is_bumped_in_database(
         self, client, db, make_user, auth_headers
@@ -179,7 +179,7 @@ class TestLegacyTokenCompatibility:
 
         resp = client.get(ME, headers=headers)
         assert resp.status_code == 401
-        assert resp.json()["message"] == "密码已变更，请重新登录"
+        assert resp.json()["message"] == "登录已失效，请重新登录"
 
 
 class TestAdminResetPassword:
@@ -215,7 +215,7 @@ class TestAdminResetPassword:
 
         resp = client.get(ME, headers=alice_headers)
         assert resp.status_code == 401
-        assert resp.json()["message"] == "密码已变更，请重新登录"
+        assert resp.json()["message"] == "登录已失效，请重新登录"
 
     def test_version_bumped_in_database(self, client, db, make_user, auth_headers):
         alice = make_user(username="alice", password=OLD)
