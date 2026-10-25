@@ -102,7 +102,23 @@ async def rate_limit_exception_hadler(request: Request, exc: RateLimitExceeded):
     )
 
 
+def _capture_exception(exc: Exception) -> None:
+    """把 500 报给 Sentry；没配 DSN 或没装包时静默跳过。
+
+    业务错误（400/401/403）不经过这里，所以不会把"密码错了"这种正常拒绝
+    当成故障刷进监控。
+    """
+    try:
+        import sentry_sdk
+
+        sentry_sdk.capture_exception(exc)
+    except Exception:
+        # 监控组件自身出问题不能影响返回 500 响应——那会让排障更难。
+        pass
+
+
 async def global_exception_hadler(request: Request, exc: Exception):
+    _capture_exception(exc)
     return JSONResponse(
         status_code=500,
         content=Response.error(code=500, message="服务器内部错误").model_dump(),

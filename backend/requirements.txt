@@ -18,3 +18,6 @@ slowapi==0.1.10
 limits==5.8.0
 # limits 的 Redis 存储后端要用它（版本的上下限由 limits 自己卡：>3,<8）
 redis==5.2.1
+# 错误监控（可选）。只有 backend/.env 里填了 SENTRY_DSN 才 import，
+# 不填的话连加载都不会加载。
+sentry-sdk==2.20.0

@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 
-from app.config import ALLOWED_ORIGINS, UPLOAD_DIR
+from app.config import ALLOWED_ORIGINS, UPLOAD_DIR, settings
 
 from app.database import run_migrations
 from app.api import api
@@ -29,16 +29,23 @@ from app.models.lab import Lab  # noqa: F401
 from app.models.equipment import Equipment  # noqa: F401
 from app.models.reservation import Reservation  # noqa: F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: F401
+from app.models.verification import VerificationCode  # noqa: F401
+from app.models.notification import Notification  # noqa: F401
 from app.services import kb_service, reservation_service  # noqa: F401
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 建表/升级必须排在 warmup 前面：warmup 会读 labs 表渲染知识库的「开放时间.md」，
-    # 全新库里表还没建出来，顺序反了就第一次启动必报错。
-    # 放在 lifespan 里而不是模块顶层：模块顶层是"import 就改数据库"，
-    # 测试导入 app.main 时也会顺带执行（tests/conftest.py 刻意绕开 lifespan）。
-    await asyncio.to_thread(run_migrations)
+    # 正常部署**不在这里建表**：compose 的 migrate 服务会先跑 python -m app.migrate，
+    # backend 通过 depends_on: service_completed_successfully 等它成功。
+    # 这样多 worker/多副本同时启动时不会各跑一遍 DDL，也不会出现"两个进程抢着
+    # ALTER TABLE、一个成功一个撞 1050"的半截状态。
+    #
+    # AUTO_MIGRATE 只给本机开发留的后门，默认 false。真打开也不会裸奔：
+    # run_migrations 里有 MySQL GET_LOCK，多进程会排队。
+    if settings.AUTO_MIGRATE:
+        await asyncio.to_thread(run_migrations)
+    # warmup 会读 labs 表渲染知识库的「开放时间.md」，所以必须等表建好再跑。
     try:
         await asyncio.to_thread(kb_service.warmup)
     except Exception:
@@ -51,6 +58,38 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(task, return_exceptions=True)
 
 
+def _init_sentry() -> None:
+    """DSN 留空就什么都不做。
+
+    刻意把 import 放在判断里面：没配 Sentry 的环境（本机、测试、CI）根本
+    不会加载这个包，也就不会因为没装它而启动失败。配了 DSN 但忘了装依赖时，
+    只打印异常、不阻止服务启动——错误监控挂了不该让整个站点跟着挂。
+
+    不发送请求体：登录接口的 body 里有明文密码，Sentry 默认会带一部分请求信息，
+    这里明确关掉，只留错误堆栈和 URL。
+    """
+    if not settings.SENTRY_DSN:
+        return
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    except ImportError:
+        traceback.print_exc()
+        return
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.SENTRY_ENVIRONMENT,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        send_default_pii=False,
+        max_request_body_size="never",
+    )
+
+
+_init_sentry()
+
+# Sentry 要在创建 app 之前 init，FastAPI 集成才会挂到之后创建的 app 上。
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(

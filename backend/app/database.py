@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from pathlib import Path
 
 from alembic import command
@@ -55,8 +56,46 @@ def _recorded_revision(tables: set[str]) -> str | None:
         return conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
 
 
+@contextmanager
+def _migration_lock():
+    """同一台 MySQL 上，同一时刻只让一个进程跑迁移。
+
+    正常部署由 compose 的 migrate 服务单独跑一次，本来不会并发。这层锁是给
+    「有人图省事在 lifespan 里打开了 AUTO_MIGRATE」和「多副本同时启动」兜底的：
+    两个进程同时 upgrade，最容易撞上 1050 table already exists，留下半截结构。
+
+    锁名带库名：测试库和正式库常常在同一台 MySQL 上，不带库名的话
+    跑测试会平白挡住正式库的迁移。
+    """
+    if engine.dialect.name != "mysql":
+        yield
+        return
+    name = f"lab_agent:migrate:{engine.url.database}"
+    conn = engine.connect()
+    try:
+        acquired = conn.execute(
+            text("SELECT GET_LOCK(:name, 60)"), {"name": name}
+        ).scalar()
+        if acquired != 1:
+            raise RuntimeError("等待数据库迁移锁超时，可能有另一个进程正在迁移")
+        yield
+    finally:
+        try:
+            conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": name})
+        finally:
+            conn.close()
+
+
 def run_migrations() -> None:
-    """把数据库结构升到最新。应用启动时调用（见 app/main.py 的 lifespan）。
+    """把数据库结构升到最新。
+
+    **正常部署不在应用启动时调用**：compose 里有一个一次性的 `migrate`
+    服务专门跑 `python -m app.migrate`，跑完 backend 才启动（见 docker-compose.yml）。
+    这样多 worker/多副本同时启动时不会各自跑一遍 DDL。本机开发照样可以
+    `python -m app.migrate`，或在 .env 里设 AUTO_MIGRATE=true 让 lifespan 代跑。
+
+    测试库不走 lifespan，由 tests/conftest.py 直接调用本函数，保证测试库结构
+    跟迁移一致。
 
     取代了原来的 `Base.metadata.create_all`。区别在于 create_all 只会
     "建缺少的表"，给已有表加列、改列、加索引它一概不管，而且**不报错**——
@@ -70,11 +109,6 @@ def run_migrations() -> None:
          所以先 stamp 到 0001（只写版本号，不执行任何 DDL），再从 0002 往后升。
          全新空库不会走这一步：它没有表，直接从头跑 0001 把表建出来。
       3. upgrade 到最新。
-
-    ⚠️ 前提是**单进程**（Dockerfile 的 CMD 就是这么起的，刻意不加 --workers）。
-    多 worker 同时启动时，每个进程都会走到这里，理论上会并发跑 DDL 而撞车。
-    真要开多 worker，得先把这一步挪到部署流程里单独执行，或者用 MySQL 的
-    GET_LOCK 包一层（reservation_service 里已有现成用法）。
     """
     cfg = Config(str(BACKEND_DIR / "alembic.ini"))
     cfg.set_main_option("script_location", str(BACKEND_DIR / "migrations"))
@@ -82,9 +116,10 @@ def run_migrations() -> None:
     # 会把 uvicorn 已经配好的 logger 全关掉，表现是"服务起来了但日志没了"。
     cfg.attributes["configure_logger"] = False
 
-    tables = set(inspect(engine).get_table_names())
-    # alembic_version 自己不算"业务表"：只有它一张表的库仍然是全新库。
-    if tables - {"alembic_version"} and _recorded_revision(tables) is None:
-        command.stamp(cfg, BASELINE_REVISION)
+    with _migration_lock():
+        tables = set(inspect(engine).get_table_names())
+        # alembic_version 自己不算"业务表"：只有它一张表的库仍然是全新库。
+        if tables - {"alembic_version"} and _recorded_revision(tables) is None:
+            command.stamp(cfg, BASELINE_REVISION)
 
-    command.upgrade(cfg, "head")
+        command.upgrade(cfg, "head")
