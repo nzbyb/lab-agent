@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import DateTime, ForeignKey, Index, UniqueConstraint
+from sqlalchemy.dialects.mysql import DATETIME as MySQLDateTime
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -55,5 +56,11 @@ class LabView(Base):
     view_time: Mapped[datetime] = mapped_column(
         # 精确到微秒：只到秒的话，"再看一眼同一间实验室"和别的记录落在同一秒里，
         # 按 view_time 排序就会平手，最近浏览的顺序变得不确定。
-        DateTime(6), default=datetime.now, nullable=False, comment="最近浏览时间"
+        # 必须走 MySQL 方言的 DATETIME(fsp=6)：泛型 DateTime 的第一个位置参数是
+        # timezone，写成 DateTime(6) 只会得到不带小数秒的 DATETIME——这个坑
+        # 直到 CI 跑红才暴露。with_variant 让其他方言仍用普通 DateTime。
+        DateTime().with_variant(MySQLDateTime(fsp=6), "mysql"),
+        default=datetime.now,
+        nullable=False,
+        comment="最近浏览时间",
     )
