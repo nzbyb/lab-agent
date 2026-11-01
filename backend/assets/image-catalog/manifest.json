@@ -1,0 +1,793 @@
+{
+  "version": 1,
+  "catalog_id": "catalog-20261101",
+  "rights": "Copyright belongs to each original source. No open license is asserted unless explicitly documented. These are illustrative assets, not verified photographs of the actual campus or exact configurations.",
+  "assets": {
+    "lab-computing": {
+      "file": "lab-computing-d245814a6937.jpg",
+      "sha256": "d245814a693783f706b2019736d76001241770a3bc86b34a3bae1150918f770d",
+      "width": 1200,
+      "height": 750,
+      "title": "Computer Lab | KLE BBA",
+      "source_page": "https://klecbalc.edu.in/computer-lab/",
+      "source_image": "https://klecbalc.edu.in/wp-content/uploads/2020/07/Computer-Lab-scaled.jpg",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-electronics": {
+      "file": "lab-electronics-26dd777f2a4f.jpg",
+      "sha256": "26dd777f2a4f6f576492ca1277466c6eda90bf8403c9c11cda85dc508d23f285",
+      "width": 1200,
+      "height": 750,
+      "title": "IIT Bombay Electrical Engineering electrical equipment scene",
+      "source_page": "https://www.ee.iitb.ac.in/",
+      "source_image": "https://www.ee.iitb.ac.in/images/index/labs.webp",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-physics": {
+      "file": "lab-physics-d4931cb44940.jpg",
+      "sha256": "d4931cb44940b2abaeb67dc2e5d57f7bec2984e2fa243372d8ffcb633705e1dc",
+      "width": 1200,
+      "height": 750,
+      "title": "大学物理实验室-智能工程学部-新乡工程学院",
+      "source_page": "https://www.xxgc.edu.cn/ee/info/1054/1577.htm",
+      "source_image": "https://www.xxgc.edu.cn/__local/2/B6/56/4ED9B591DBD97091E66D34AD42F_C31B7710_DE1E.jpg",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-chemistry": {
+      "file": "lab-chemistry-e257ed840744.jpg",
+      "sha256": "e257ed8407444138ec90a166af65015585bdf89efa21c51dabff5f2a21486c2f",
+      "width": 1200,
+      "height": 750,
+      "title": "化学实验室-北京微纳光科自动化设备有限公司",
+      "source_page": "https://www.bjwn.cn/ShowNews.asp?ArticleID=2404&id=1",
+      "source_image": "http://wnlabs.cn/uploads/allimg/211022/2-211022164409444.jpg",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-biology": {
+      "file": "lab-biology-73e8489310e9.jpg",
+      "sha256": "73e8489310e997016a817f5812513cdf654534d2160d6344295ecd9b9b6dac54",
+      "width": 1200,
+      "height": 750,
+      "title": "浙江大学生物学国家级实验教学示范中心",
+      "source_page": "https://zjubiolab.zju.edu.cn/page/labchannel/tslab/detail/78/2027",
+      "source_image": "https://zjubiolab.zju.edu.cn/upload/layui/images/20230319/412-1-1-3.png",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-ai": {
+      "file": "lab-ai-65bece33545e.jpg",
+      "sha256": "65bece33545eef560bdfab057c3b32207d392126493db4096c6954adf14db389",
+      "width": 1200,
+      "height": 750,
+      "title": "Computer research / teaching room",
+      "source_page": "https://ayinfotechgh.com/computer-labs-in-schools/",
+      "source_image": "https://ayinfotechgh.com/wp-content/uploads/2019/10/AY-Infotechgh-Computer-lab.jpg",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-robotics": {
+      "file": "lab-robotics-ce1e575c4101.jpg",
+      "sha256": "ce1e575c4101e9c27a50e3c4989441b837420ea40dfac2fa6cab2a65f957515a",
+      "width": 1200,
+      "height": 750,
+      "title": "机器人智能制造实验室-烟台理工学院人工智能学院",
+      "source_page": "https://ai.yitsd.edu.cn/info/1027/1239.htm",
+      "source_image": "https://ai.yitsd.edu.cn/__local/B/03/5B/C0DC1B7A354057DE9B130138B14_6E6AD481_1D96F.jpg",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "lab-software": {
+      "file": "lab-software-c8cbb296c8b1.jpg",
+      "sha256": "c8cbb296c8b12130f0f08b5a416abc5f0500a6f7204f2437c728b2f77268ba8c",
+      "width": 1200,
+      "height": 750,
+      "title": "Computer teaching lab",
+      "source_page": "https://blog.rentacomputer.com/2019/09/06/building-the-perfect-computer-lab-rentals-let-you-test-before-you-buy/",
+      "source_image": "https://blog.rentacomputer.com/wp-content/uploads/2019/09/Lab2-cropped.jpg",
+      "match_note": "实验室类型/学科示意，非本校实拍"
+    },
+    "gpu-rtx4090": {
+      "file": "gpu-rtx4090-17ac002abd64.jpg",
+      "sha256": "17ac002abd64d65c9a96be748f6186e8d37aae1485ba475800ce2dce4c7b68ae",
+      "width": 900,
+      "height": 900,
+      "title": "NVIDIA GeForce RTX 4090",
+      "source_page": "https://www.nvidia.com/en-us/geforce/graphics-cards/40-series/rtx-4090/",
+      "source_image": "https://www.nvidia.com/content/dam/en-zz/Solutions/geforce/ada/rtx-4090/geforce-ada-4090-web-og-1200x630.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "desktop-workstation": {
+      "file": "desktop-workstation-99cf41278647.jpg",
+      "sha256": "99cf41278647caa7a55b3ea48bf0764d3567eadfac095464d85032e6ee63ab05",
+      "width": 900,
+      "height": 900,
+      "title": "Lenovo desktop host",
+      "source_page": "https://www.xybhshop.com/",
+      "source_image": "https://www.xybhshop.com/storage/data/gallery_album/68/images/68_P_1670773793198.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "projector": {
+      "file": "projector-cfd8ce818506.jpg",
+      "sha256": "cfd8ce818506a4d246cfef569a5f394353ac833a7f63796ae82ef20a9786ba75",
+      "width": 900,
+      "height": 900,
+      "title": "Epson LCD projector",
+      "source_page": "https://post.smzdm.com/p/ad9m2m7x/",
+      "source_image": "https://qnam.smzdm.com/202301/14/63c252d6a58df5977.jpg_e1080.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "network-switch": {
+      "file": "network-switch-d1874a5623f4.jpg",
+      "sha256": "d1874a5623f4e5571593f0d414273396ad4c4b6d66033f009be2803dd534a7b8",
+      "width": 900,
+      "height": 900,
+      "title": "TP-Link TL-SG1024 24-port Gigabit switch",
+      "source_page": "https://www.tp-link.com/us/business-networking/unmanaged-switch/tl-sg1024/",
+      "source_image": "https://static.tp-link.com/TL-SG1024_UN_11.0_01_1499779943601c.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "oscilloscope": {
+      "file": "oscilloscope-a0921e019988.jpg",
+      "sha256": "a0921e019988a4926d187e9c5e0045056ad32b85fbb8ba3cf0f81768d30c5553",
+      "width": 900,
+      "height": 900,
+      "title": "HD304MSO InfiniiVision HD3系列示波器-KEYSIGHT HD304MSO-数字示波器-东方中科",
+      "source_page": "https://www.dfzk.com/prod_keysight_hd304mso.html",
+      "source_image": "https://dfzk-www.oss-cn-beijing.aliyuncs.com/www-PRD/products/images/keysight_hd304mso_p2.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "signal-generator": {
+      "file": "signal-generator-355f8a6dbdd8.jpg",
+      "sha256": "355f8a6dbdd8eb7f925fc79df783eff82d09f5cc7678b97d17da276ba3aadbfc",
+      "width": 900,
+      "height": 900,
+      "title": "Siglent SDG1062X 60MHz",
+      "source_page": "https://siglentna.com/waveform-generators/sdg1000x-series-functionarbitrary-waveform-generators/",
+      "source_image": "https://siglentna.com/wp-content/uploads/2017/10/SDG1062X-1.png",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "digital-multimeter": {
+      "file": "digital-multimeter-8f43cdc37de7.jpg",
+      "sha256": "8f43cdc37de71856d2e00a669477c522732286739a02aa63a85f2f5256ec2d1f",
+      "width": 900,
+      "height": 900,
+      "title": "UT890D+数字万用表--罗伯克测控--苏州罗伯克测控技术有限公司",
+      "source_page": "http://www.rbt-sz.com/product_show.php?product_id=91",
+      "source_image": "http://www.rbt-sz.com/upload/image/20190825/20190825085037_76991.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "dc-power-supply": {
+      "file": "dc-power-supply-652eaeb662cb.jpg",
+      "sha256": "652eaeb662cb558f0cdb17a9ea4988c4643a1e76c5259ae18e489a38f4da785e",
+      "width": 900,
+      "height": 900,
+      "title": "Siglent SPD3303X bench supply",
+      "source_page": "https://siglentna.com/power-supplies/spd3303x-spd3303x-e-series-programmable-dc-power-supply/",
+      "source_image": "https://siglentna.com/wp-content/uploads/2017/10/SPD3303X_FullProgRes.png",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "optical-table": {
+      "file": "optical-table-2ed16cd0d4eb.jpg",
+      "sha256": "2ed16cd0d4eb071358d89f1676279e0e3f10ccae4e31507a1f9201c4defca54c",
+      "width": 900,
+      "height": 900,
+      "title": "广州基座光学科技有限公司_OP系列 光学隔振平台",
+      "source_page": "https://www.oeabt.com/show.php?id=85",
+      "source_image": "https://www.oeabt.com/uploadfile/upload/image/20190930/2019093017261455.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "hene-laser": {
+      "file": "hene-laser-3df050929015.jpg",
+      "sha256": "3df05092901555d4391b0ccf24427546dbf86473c6d5954b0191f69fef96ca2b",
+      "width": 900,
+      "height": 900,
+      "title": "Newport N-LHP-151 HeNe laser 632.8nm",
+      "source_page": "https://www.newport.com.cn/p/N-LHP-151",
+      "source_image": "https://api.p1.mks.com/medias/sys_master/DefaultCelumAssetsFolder/h62/h84/9902541602846/N-LHP-151_Set_Angle_800w/N-LHP-151-Set-Angle-800w.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "air-track": {
+      "file": "air-track-277b45195095.jpg",
+      "sha256": "277b45195095277cc8cb5a4323af2f64d3c10c56823653912c45459979caccfd",
+      "width": 900,
+      "height": 900,
+      "title": "PASCO air track",
+      "source_page": "https://www.pasco.com/products/lab-apparatus/mechanics/air-tracks/sf-9214",
+      "source_image": "https://cdn2.webdamdb.com/md_wmxnFi0nkxo1.png?1565279260",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "spectrometer": {
+      "file": "spectrometer-44122b90b643.jpg",
+      "sha256": "44122b90b643b39bc8c2c53f2e67469e50092842f7e64f30b8dfe3c9d670e4b1",
+      "width": 900,
+      "height": 900,
+      "title": "分光计 - 上海茅林光电科技有限公司",
+      "source_page": "http://www.morningoptical.com/h-pd-2550.html",
+      "source_image": "http://8894033.s21i.faiusr.com/2/ABUIABACGAAg87LJkgYooM2NkQUwoCE4kBY.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "analytical-balance": {
+      "file": "analytical-balance-ff5e2cfd477c.jpg",
+      "sha256": "ff5e2cfd477c7ffd93a76a899b37df0d27179a38b70566c7325bb004e3e9676b",
+      "width": 900,
+      "height": 900,
+      "title": "Exploring the Different Types of Laboratory Analytical Balances - Drawell",
+      "source_page": "https://www.drawellanalytical.com/exploring-the-different-types-of-laboratory-analytical-balances/",
+      "source_image": "https://www.drawellanalytical.com/wp-content/uploads/2023/06/DT-B-2.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "centrifuge": {
+      "file": "centrifuge-fe30c3edd9c3.jpg",
+      "sha256": "fe30c3edd9c3aae3544b55f45a3ad2893ee76165d107a6cf1958976394081d19",
+      "width": 900,
+      "height": 900,
+      "title": "台式离心机4000/4200_广州守诚贸易发展有限公司",
+      "source_page": "http://www.olybota.cn/index.php?m=home&c=View&a=index&aid=99",
+      "source_image": "http://www.olybota.cn/uploads/allimg/20211119/2-2111191444122U.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "fume-hood": {
+      "file": "fume-hood-e1be1077d85a.jpg",
+      "sha256": "e1be1077d85afc376b8dede1a16f222e2a082753f50158d62e56e050d4fc509a",
+      "width": 900,
+      "height": 900,
+      "title": "Laboratory fume hood",
+      "source_page": "http://www.gz-jmh.cn/products.php?act=detail&id=207",
+      "source_image": "http://www.gz-jmh.cn/data/images/201903/27/hqrj3z.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "ph-meter": {
+      "file": "ph-meter-60f2444e0ed3.jpg",
+      "sha256": "60f2444e0ed3e1128bdef375e27d407ee934e0897a207253e9539959a48eaf01",
+      "width": 900,
+      "height": 900,
+      "title": "PH计,酸度计_上海三信",
+      "source_page": "http://www.shsanxin.com.cn/PH/",
+      "source_image": "http://www.shsanxin.com.cn/images/MP512-01.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "microscope": {
+      "file": "microscope-c511b3c71e1c.jpg",
+      "sha256": "c511b3c71e1c92067dc54fe7cd2ae5dcff15d806ea4d8ccbfed5038d34712f2f",
+      "width": 900,
+      "height": 900,
+      "title": "Optical compound microscope",
+      "source_page": "https://www.viyeechina.com/dynamic/1523.html",
+      "source_image": "https://www.viyeechina.com/static/upload/image/20220630/1656568641274335.png",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "incubator": {
+      "file": "incubator-ae9eee8aacae.jpg",
+      "sha256": "ae9eee8aacae0cd7c2249807619ac9a9ec551ba3b39da918ea34ec18d490ed2c",
+      "width": 900,
+      "height": 900,
+      "title": "Biostream BH-1200恒温培养箱 - Biostream振荡培养箱 - Biostream-上海博奥思生物技术有限公司",
+      "source_page": "https://cn.biostream.com/show-175-689-1.html",
+      "source_image": "http://cn.biostream.com/uploadfile/2023/0130/20230130031702525.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "pipette": {
+      "file": "pipette-421b5b941d8a.jpg",
+      "sha256": "421b5b941d8a6f1c825ac322eaee9326eaa33321134b0a9797658e7673f3c98d",
+      "width": 900,
+      "height": 900,
+      "title": "Micropipette – LabCore Scientific",
+      "source_page": "https://labcorescientific.com/product/micropipette/",
+      "source_image": "https://labcorescientific.com/wp-content/uploads/2024/05/Micropipette.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "pcr-machine": {
+      "file": "pcr-machine-baf535172a63.jpg",
+      "sha256": "baf535172a6358284b8fb5d04677d1b80c745f30ca62a1477580bc779ef34f75",
+      "width": 900,
+      "height": 900,
+      "title": "TIANGEN TGreat Expert thermal cycler",
+      "source_page": "https://www.tiangen.com/content/details_101_22687.html",
+      "source_image": "https://www.tiangen.com/upload/image/20220825/20220825174535_99492.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "gpu-server": {
+      "file": "gpu-server-19160676d0a8.jpg",
+      "sha256": "19160676d0a812e2842ae7bf2daf9dd889f7edc02a45f60cb9a0af7b88ac92dc",
+      "width": 900,
+      "height": 900,
+      "title": "NVIDIA GPU rack systems",
+      "source_page": "https://www.nvidia.com/en-us/data-center/dgx-platform/",
+      "source_image": "https://www.nvidia.com/content/nvidiaGDC/us/en_US/data-center/dgx-platform/_jcr_content/root/responsivegrid/nv_container_728664875/nv_container/nv_teaser_copy.coreimg.jpeg/1773697031842/nvidia-gb300-systems.jpeg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "realsense-d435i": {
+      "file": "realsense-d435i-63950ccd4007.jpg",
+      "sha256": "63950ccd40075f309d1bd1a7d595cdabc4391273e05833c39b48998270870b86",
+      "width": 900,
+      "height": 900,
+      "title": "RealSense D435i",
+      "source_page": "https://store.realsenseai.com/buy-realsense-depth-camera-d435i.html",
+      "source_image": "https://store.realsenseai.com/media/catalog/product/cache/04f96289d35b2e1a49977ea0ac2b4779/i/n/intel_realsense_d435i_front_1_1_1_1.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "annotation-workstation": {
+      "file": "annotation-workstation-368dc1595e88.jpg",
+      "sha256": "368dc1595e88541ebb080e9a899d12873117a37b1760cf9982455ee67c5f213e",
+      "width": 900,
+      "height": 900,
+      "title": "Lenovo ThinkStation P410",
+      "source_page": "https://www.bjzfkt.com/Mobile/Products/gongzuozhanP410.html",
+      "source_image": "https://www.bjzfkt.com/UploadFiles/Others/201703291409438315941.png",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "ur5-arm": {
+      "file": "ur5-arm-50375fc6eeac.jpg",
+      "sha256": "50375fc6eeacfb7055784b35ff155657d0e86d7f1a7ce9633272774a326bb6e6",
+      "width": 900,
+      "height": 900,
+      "title": "Universal Robots UR5 model illustration (RoboDK)",
+      "source_page": "https://robodk.com/robot/Universal-Robots/UR5",
+      "source_image": "https://cdn.robodk.com/robot/img/UR5-robot.png",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "livox-mid360": {
+      "file": "livox-mid360-4abfe1c3f75d.jpg",
+      "sha256": "4abfe1c3f75dba30b8522b3c6a0a4e9ce339925352c436ea8b790a16c790c4dd",
+      "width": 900,
+      "height": 900,
+      "title": "Livox Mid-360",
+      "source_page": "https://www.livoxtech.com/mid-360",
+      "source_image": "https://www.livoxtech.com/dps/8422db38d7e9d38ce47e65391c420a7e.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "jetson-orin": {
+      "file": "jetson-orin-b2e4be170dfd.jpg",
+      "sha256": "b2e4be170dfda3b2e24d92d5231d6cd603cbc983186a55ae7c4d9decede12530",
+      "width": 900,
+      "height": 900,
+      "title": "NVIDIA Jetson AGX Orin Developer Kit",
+      "source_page": "https://www.nvidia.com/en-us/autonomous-machines/embedded-systems/jetson-orin/",
+      "source_image": "https://www.nvidia.com/content/dam/en-zz/Solutions/gtcf22/embedded-systems/jetson-orin/jetson-agx-orin-developer-kit-assets-2c50-d@2x.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "monitor": {
+      "file": "monitor-5e566de5ed8d.jpg",
+      "sha256": "5e566de5ed8d0cddc0105bda86422baa32198d47e0cebc729d19f196b48282a9",
+      "width": 900,
+      "height": 900,
+      "title": "戴尔显示器-DELL显示器-戴尔DELL企业官网",
+      "source_page": "https://www.dellemc-solution.com/product/monitor.html?category=equipment&gacd=9788180-2216869-0-7paWM-0&dgc=mb&cid=2216869&lid=7paWM",
+      "source_image": "https://emc-image.dellemc-solution.com/f/dellemc/sFile/tenantId444/2020-07-07/image/1594104866144142.png",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    },
+    "code-server": {
+      "file": "code-server-5629a8e5fdbf.jpg",
+      "sha256": "5629a8e5fdbf50fdf4ba1ef4424b714a385d09f7551d1f31dab5b5fadefa4b00",
+      "width": 900,
+      "height": 900,
+      "title": "ZTE rack server",
+      "source_page": "https://sdnfv.zte.com.cn/zh-CN/products/ICT-hardware/server",
+      "source_image": "https://sdnfv.zte.com.cn/upload_files/5998b812-5898-11e7-8fc1-1866daf0eb58.jpg",
+      "match_note": "按设备型号或类别匹配的示意图，参数以数据库文字为准；UR5 使用模型图"
+    }
+  },
+  "records": [
+    {
+      "table": "labs",
+      "id": 1,
+      "identity": {
+        "name": "计算机实验室"
+      },
+      "asset": "lab-computing",
+      "img": "/uploads/catalog-20261101/lab-computing-d245814a6937.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 2,
+      "identity": {
+        "name": "电子实验室"
+      },
+      "asset": "lab-electronics",
+      "img": "/uploads/catalog-20261101/lab-electronics-26dd777f2a4f.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 3,
+      "identity": {
+        "name": "物理实验室"
+      },
+      "asset": "lab-physics",
+      "img": "/uploads/catalog-20261101/lab-physics-d4931cb44940.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 4,
+      "identity": {
+        "name": "化学实验室"
+      },
+      "asset": "lab-chemistry",
+      "img": "/uploads/catalog-20261101/lab-chemistry-e257ed840744.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 5,
+      "identity": {
+        "name": "生物实验室"
+      },
+      "asset": "lab-biology",
+      "img": "/uploads/catalog-20261101/lab-biology-73e8489310e9.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 6,
+      "identity": {
+        "name": "人工智能实验室"
+      },
+      "asset": "lab-ai",
+      "img": "/uploads/catalog-20261101/lab-ai-65bece33545e.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 7,
+      "identity": {
+        "name": "机器人实验室"
+      },
+      "asset": "lab-robotics",
+      "img": "/uploads/catalog-20261101/lab-robotics-ce1e575c4101.jpg"
+    },
+    {
+      "table": "labs",
+      "id": 8,
+      "identity": {
+        "name": "软件工程实验室"
+      },
+      "asset": "lab-software",
+      "img": "/uploads/catalog-20261101/lab-software-c8cbb296c8b1.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 1,
+      "identity": {
+        "name": "RTX4090",
+        "spec": "24G 显存",
+        "lab_id": 1
+      },
+      "asset": "gpu-rtx4090",
+      "img": "/uploads/catalog-20261101/gpu-rtx4090-17ac002abd64.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 2,
+      "identity": {
+        "name": "开发主机",
+        "spec": "i7 / 32G / 1T SSD",
+        "lab_id": 1
+      },
+      "asset": "desktop-workstation",
+      "img": "/uploads/catalog-20261101/desktop-workstation-99cf41278647.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 3,
+      "identity": {
+        "name": "投影仪",
+        "spec": "1080P",
+        "lab_id": 1
+      },
+      "asset": "projector",
+      "img": "/uploads/catalog-20261101/projector-cfd8ce818506.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 4,
+      "identity": {
+        "name": "千兆交换机",
+        "spec": "24 口",
+        "lab_id": 1
+      },
+      "asset": "network-switch",
+      "img": "/uploads/catalog-20261101/network-switch-d1874a5623f4.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 5,
+      "identity": {
+        "name": "示波器",
+        "spec": "100MHz 双通道",
+        "lab_id": 2
+      },
+      "asset": "oscilloscope",
+      "img": "/uploads/catalog-20261101/oscilloscope-a0921e019988.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 6,
+      "identity": {
+        "name": "信号发生器",
+        "spec": "DDS 60MHz",
+        "lab_id": 2
+      },
+      "asset": "signal-generator",
+      "img": "/uploads/catalog-20261101/signal-generator-355f8a6dbdd8.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 7,
+      "identity": {
+        "name": "数字万用表",
+        "spec": "4 位半",
+        "lab_id": 2
+      },
+      "asset": "digital-multimeter",
+      "img": "/uploads/catalog-20261101/digital-multimeter-8f43cdc37de7.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 8,
+      "identity": {
+        "name": "直流稳压电源",
+        "spec": "30V 5A",
+        "lab_id": 2
+      },
+      "asset": "dc-power-supply",
+      "img": "/uploads/catalog-20261101/dc-power-supply-652eaeb662cb.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 9,
+      "identity": {
+        "name": "光学实验台",
+        "spec": "1.2m 隔振台",
+        "lab_id": 3
+      },
+      "asset": "optical-table",
+      "img": "/uploads/catalog-20261101/optical-table-2ed16cd0d4eb.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 10,
+      "identity": {
+        "name": "氦氖激光器",
+        "spec": "632.8nm",
+        "lab_id": 3
+      },
+      "asset": "hene-laser",
+      "img": "/uploads/catalog-20261101/hene-laser-3df050929015.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 11,
+      "identity": {
+        "name": "力学轨道",
+        "spec": "气垫导轨 1.5m",
+        "lab_id": 3
+      },
+      "asset": "air-track",
+      "img": "/uploads/catalog-20261101/air-track-277b45195095.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 12,
+      "identity": {
+        "name": "分光计",
+        "spec": "0.1° 精度",
+        "lab_id": 3
+      },
+      "asset": "spectrometer",
+      "img": "/uploads/catalog-20261101/spectrometer-44122b90b643.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 13,
+      "identity": {
+        "name": "电子天平",
+        "spec": "0.1mg",
+        "lab_id": 4
+      },
+      "asset": "analytical-balance",
+      "img": "/uploads/catalog-20261101/analytical-balance-ff5e2cfd477c.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 14,
+      "identity": {
+        "name": "离心机",
+        "spec": "4000rpm",
+        "lab_id": 4
+      },
+      "asset": "centrifuge",
+      "img": "/uploads/catalog-20261101/centrifuge-fe30c3edd9c3.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 15,
+      "identity": {
+        "name": "通风橱",
+        "spec": "1.5m",
+        "lab_id": 4
+      },
+      "asset": "fume-hood",
+      "img": "/uploads/catalog-20261101/fume-hood-e1be1077d85a.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 16,
+      "identity": {
+        "name": "pH 计",
+        "spec": "0.01pH",
+        "lab_id": 4
+      },
+      "asset": "ph-meter",
+      "img": "/uploads/catalog-20261101/ph-meter-60f2444e0ed3.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 17,
+      "identity": {
+        "name": "显微镜",
+        "spec": "1000x 光学",
+        "lab_id": 5
+      },
+      "asset": "microscope",
+      "img": "/uploads/catalog-20261101/microscope-c511b3c71e1c.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 18,
+      "identity": {
+        "name": "恒温培养箱",
+        "spec": "室温 ~ 60℃",
+        "lab_id": 5
+      },
+      "asset": "incubator",
+      "img": "/uploads/catalog-20261101/incubator-ae9eee8aacae.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 19,
+      "identity": {
+        "name": "移液器",
+        "spec": "0.5-10μL",
+        "lab_id": 5
+      },
+      "asset": "pipette",
+      "img": "/uploads/catalog-20261101/pipette-421b5b941d8a.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 20,
+      "identity": {
+        "name": "PCR 仪",
+        "spec": "96 孔",
+        "lab_id": 5
+      },
+      "asset": "pcr-machine",
+      "img": "/uploads/catalog-20261101/pcr-machine-baf535172a63.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 21,
+      "identity": {
+        "name": "GPU 训练服务器",
+        "spec": "2 * RTX4090 / 128G",
+        "lab_id": 6
+      },
+      "asset": "gpu-server",
+      "img": "/uploads/catalog-20261101/gpu-server-19160676d0a8.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 22,
+      "identity": {
+        "name": "深度学习训练显卡",
+        "spec": "24G 显存",
+        "lab_id": 6
+      },
+      "asset": "gpu-rtx4090",
+      "img": "/uploads/catalog-20261101/gpu-rtx4090-17ac002abd64.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 23,
+      "identity": {
+        "name": "深度相机",
+        "spec": "RealSense D435i",
+        "lab_id": 6
+      },
+      "asset": "realsense-d435i",
+      "img": "/uploads/catalog-20261101/realsense-d435i-63950ccd4007.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 24,
+      "identity": {
+        "name": "标注工作站",
+        "spec": "i9 / 64G",
+        "lab_id": 6
+      },
+      "asset": "annotation-workstation",
+      "img": "/uploads/catalog-20261101/annotation-workstation-368dc1595e88.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 25,
+      "identity": {
+        "name": "UR5 机械臂",
+        "spec": "负载 5kg",
+        "lab_id": 7
+      },
+      "asset": "ur5-arm",
+      "img": "/uploads/catalog-20261101/ur5-arm-50375fc6eeac.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 26,
+      "identity": {
+        "name": "Livox 激光雷达",
+        "spec": "Mid-360",
+        "lab_id": 7
+      },
+      "asset": "livox-mid360",
+      "img": "/uploads/catalog-20261101/livox-mid360-4abfe1c3f75d.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 27,
+      "identity": {
+        "name": "RealSense 深度相机",
+        "spec": "D435i",
+        "lab_id": 7
+      },
+      "asset": "realsense-d435i",
+      "img": "/uploads/catalog-20261101/realsense-d435i-63950ccd4007.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 28,
+      "identity": {
+        "name": "Jetson Orin",
+        "spec": "32G",
+        "lab_id": 7
+      },
+      "asset": "jetson-orin",
+      "img": "/uploads/catalog-20261101/jetson-orin-b2e4be170dfd.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 29,
+      "identity": {
+        "name": "开发主机",
+        "spec": "i7 / 32G / 1T SSD",
+        "lab_id": 8
+      },
+      "asset": "desktop-workstation",
+      "img": "/uploads/catalog-20261101/desktop-workstation-99cf41278647.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 30,
+      "identity": {
+        "name": "显示器",
+        "spec": "27 寸 2K",
+        "lab_id": 8
+      },
+      "asset": "monitor",
+      "img": "/uploads/catalog-20261101/monitor-5e566de5ed8d.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 31,
+      "identity": {
+        "name": "投影仪",
+        "spec": "1080P",
+        "lab_id": 8
+      },
+      "asset": "projector",
+      "img": "/uploads/catalog-20261101/projector-cfd8ce818506.jpg"
+    },
+    {
+      "table": "equipments",
+      "id": 32,
+      "identity": {
+        "name": "代码服务器",
+        "spec": "8 核 / 32G",
+        "lab_id": 8
+      },
+      "asset": "code-server",
+      "img": "/uploads/catalog-20261101/code-server-5629a8e5fdbf.jpg"
+    }
+  ]
+}
