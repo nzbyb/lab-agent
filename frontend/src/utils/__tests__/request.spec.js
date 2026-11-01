@@ -114,6 +114,33 @@ describe('响应拦截器：业务码不是 200 时', () => {
   })
 })
 
+describe('响应拦截器：文件下载（responseType=blob）', () => {
+  // 下载分支不能落到下面那句 data.code !== 200 的判断里：
+  // 成功时 res.data 是 Blob，根本没有 code 字段，会被当成失败弹 toast。
+  it('成功：原样把整个响应交回调用方，不弹提示', () => {
+    const res = {
+      data: new Blob(['x'], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      }),
+      config: { responseType: 'blob' }
+    }
+    expect(respInterceptors.onFulfilled(res)).toBe(res)
+    expect(ElMessage.error).not.toHaveBeenCalled()
+  })
+
+  it('失败：后端回的是 JSON，读出来弹后端文案并 reject', async () => {
+    // 导出出错时后端回的是 JSON 而不是文件，不单独处理的话用户会下到一个
+    // 内容其实是报错信息的 .xlsx，打开才发现不对。
+    const body = { code: 400, message: '开始日期不能晚于结束日期' }
+    const res = {
+      data: new Blob([JSON.stringify(body)], { type: 'application/json' }),
+      config: { responseType: 'blob' }
+    }
+    await expect(respInterceptors.onFulfilled(res)).rejects.toEqual(body)
+    expect(ElMessage.error).toHaveBeenCalledWith('开始日期不能晚于结束日期')
+  })
+})
+
 describe('响应拦截器：HTTP 层报错时', () => {
   it('HTTP 401：把后端那句具体原因透出来，并清登录态', async () => {
     const store = useUserStore(pinia)

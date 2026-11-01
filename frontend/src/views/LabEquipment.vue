@@ -7,6 +7,10 @@
             <span>{{ lab?.name || '实验室' }}设备列表 </span>
           </div>
           <div>
+            <!-- 收藏和预约并排：用户看完设备列表顺手就能收藏，不用返回列表页 -->
+            <el-button :icon="isFavorited ? StarFilled : Star" @click="toggleFavorite">
+              {{ isFavorited ? '已收藏' : '收藏' }}
+            </el-button>
             <!-- 和 LabList.vue 的「预约」按钮保持一致：已停用的实验室不该能打开预约弹窗。
                  入口 LabList 的「查看设备」没有 status 判断，所以这里必须自己挡一道，
                  否则用户点得动、一路填完，最后才被后端「实验室未开放预约」拒掉。 -->
@@ -109,12 +113,19 @@
 </template>
 <script setup>
 import { getLab } from '@/api/lab'
+import {
+  addFavoriteApi,
+  getFavoriteIdsApi,
+  recordLabViewApi,
+  removeFavoriteApi
+} from '@/api/favorite'
 import { ElMessage } from 'element-plus'
-import { ref, reactive, onMounted } from 'vue'
+import { computed, ref, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getEquipmentPageListApi } from '@/api/equipment'
 import ReserveDialog from '@/components/ReserveDialog.vue'
 import { labOpenState, todayHoursText } from '@/utils/lab'
+import { Star, StarFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -131,6 +142,33 @@ const params = {
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
+
+// 收藏只关心"当前这间实验室"，所以只拉 id 列表判断一下，不用整份收藏数据
+const favoriteIds = ref([])
+const isFavorited = computed(() =>
+  lab.value ? favoriteIds.value.includes(lab.value.id) : false
+)
+
+const loadFavoriteIds = async () => {
+  try {
+    const res = await getFavoriteIdsApi()
+    if (res.code === 200) favoriteIds.value = res.data || []
+  } catch {
+    // 拉不到收藏只影响按钮初始状态，不影响设备列表
+  }
+}
+
+const toggleFavorite = async () => {
+  const current = lab.value
+  if (!current) return
+  const saved = favoriteIds.value.includes(current.id)
+  const res = saved ? await removeFavoriteApi(current.id) : await addFavoriteApi(current.id)
+  if (res.code !== 200) return
+  favoriteIds.value = saved
+    ? favoriteIds.value.filter((id) => id !== current.id)
+    : [...favoriteIds.value, current.id]
+  ElMessage.success(saved ? '已取消收藏' : '已收藏')
+}
 
 // 打开弹窗前重新确认一次实验室状态。
 // lab 是挂载时那份快照（onMounted 里只拉一次），用户停留本页期间管理员把实验室
@@ -196,8 +234,19 @@ const loadEquipment = async () => {
   }
 }
 
-onMounted(() => {
-  loadLab()
+onMounted(async () => {
+  // 只有详情真的拉到了才算一次浏览，实验室不存在/参数缺失时不记
+  let loaded = null
+  try {
+    loaded = await loadLab()
+  } catch {
+    loaded = null // 拦截器已经提示过，设备和收藏照常加载
+  }
+  if (loaded?.id) {
+    // 浏览记录是顺带写的，失败不该弹提示打扰用户（catch 只为了不冒出未处理的 Promise）
+    recordLabViewApi(loaded.id).catch(() => {})
+  }
   loadEquipment()
+  loadFavoriteIds()
 })
 </script>

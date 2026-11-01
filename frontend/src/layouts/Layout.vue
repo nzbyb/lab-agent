@@ -35,6 +35,10 @@
           <el-icon><Bell /></el-icon>
           <span>消息通知</span>
         </el-menu-item>
+        <el-menu-item index="/manager/announcements">
+          <el-icon><ChatLineSquare /></el-icon>
+          <span>校园公告</span>
+        </el-menu-item>
         <el-menu-item index="/manager/lab-list" v-if="userStore.isStudent">
           <el-icon><OfficeBuilding /></el-icon>
           <span>实验室列表</span>
@@ -42,6 +46,10 @@
         <el-menu-item index="/manager/my-reservation" v-if="userStore.isStudent">
           <el-icon><Tickets /></el-icon>
           <span>我的预约</span>
+        </el-menu-item>
+        <el-menu-item index="/manager/favorites" v-if="userStore.isStudent">
+          <el-icon><Star /></el-icon>
+          <span>我的收藏</span>
         </el-menu-item>
         <el-menu-item index="/manager/lab" v-if="userStore.isAdmin">
           <el-icon><house /></el-icon>
@@ -58,6 +66,10 @@
         <el-menu-item index="/manager/user" v-if="userStore.isAdmin">
           <el-icon><user /></el-icon>
           <span>用户管理</span>
+        </el-menu-item>
+        <el-menu-item index="/manager/audit-logs" v-if="userStore.isAdmin">
+          <el-icon><List /></el-icon>
+          <span>操作日志</span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -199,6 +211,9 @@ import {
   Tickets,
   Checked,
   ChatDotRound,
+  ChatLineSquare,
+  Star,
+  List,
   Fold,
   ArrowDown,
   Bell
@@ -298,10 +313,13 @@ const PAGE_TITLES = {
   '/manager/lab-list': '实验室列表',
   '/manager/lab-equipment': '实验室设备',
   '/manager/my-reservation': '我的预约',
+  '/manager/favorites': '我的收藏',
+  '/manager/announcements': '校园公告',
   '/manager/lab': '实验室管理',
   '/manager/equipment': '设备列表管理',
   '/manager/audit-reservation': '预约审核',
   '/manager/user': '用户管理',
+  '/manager/audit-logs': '操作日志',
   '/manager/profile': '个人信息',
   '/manager/password': '修改密码',
   '/manager/403': '无权访问'

@@ -23,6 +23,29 @@ service.interceptors.request.use(
 
 service.interceptors.response.use(
   (res) => {
+    // 文件下载（目前只有报表导出）单独一条分支：成功时 res.data 是 Blob，
+    // 没有 code 字段，落到下面那句判断会被当成"请求失败"。
+    // 失败时后端回的是 JSON 而不是文件，这里读出来弹提示，
+    // 否则用户会下载到一个内容其实是报错信息的 .xlsx。
+    // config 用可选链：拦截器的单测会直接塞一个只有 data 的假对象进来，
+    // 拿不到 config 时按普通 JSON 响应处理即可。
+    if (res.config?.responseType === 'blob') {
+      const blob = res.data
+      if (blob && blob.type && blob.type.includes('application/json')) {
+        return blob.text().then((text) => {
+          let body = {}
+          try {
+            body = JSON.parse(text)
+          } catch {
+            // 不是合法 JSON 就按通用错误处理
+          }
+          ElMessage.error(body.message || '导出失败')
+          return Promise.reject(body)
+        })
+      }
+      return res
+    }
+
     const data = res.data
     if (data.code !== 200) {
       // 401 单独处理，顺便修掉一个既有小 bug：改造前这里先弹 data.message、紧接着又弹

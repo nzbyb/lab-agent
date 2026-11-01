@@ -136,49 +136,9 @@
         </el-descriptions>
 
         <div class="timeline-title">状态时间线</div>
-        <el-timeline>
-          <el-timeline-item :timestamp="formatTime(detailRow.create_time)" color="#2563eb">
-            提交预约
-          </el-timeline-item>
-
-          <!-- 已拒绝：审核那一步就是终点 -->
-          <el-timeline-item
-            v-if="detailRow.status === 2 && detailRow.audit_time"
-            :timestamp="formatTime(detailRow.audit_time)"
-            color="#f56c6c"
-          >
-            管理员拒绝
-          </el-timeline-item>
-
-          <!-- 已通过 / 通过后被取消：审核通过这一步 -->
-          <el-timeline-item
-            v-else-if="detailRow.audit_time"
-            :timestamp="formatTime(detailRow.audit_time)"
-            color="#67c23a"
-          >
-            管理员通过
-          </el-timeline-item>
-
-          <!-- 还在等审核 -->
-          <el-timeline-item
-            v-else-if="detailRow.status === 0"
-            timestamp="等待中"
-            color="#e6a23c"
-          >
-            等待管理员审核
-          </el-timeline-item>
-
-          <el-timeline-item
-            v-if="detailRow.cancel_time"
-            :timestamp="formatTime(detailRow.cancel_time)"
-            color="#909399"
-          >
-            预约已取消
-            <div class="timeline-note">
-              {{ detailRow.cancel_reason || '本人取消' }}
-            </div>
-          </el-timeline-item>
-        </el-timeline>
+        <!-- 数据来自 reservation_logs：每次变更一行，带操作人。
+             迁移前的预约没有日志，组件会退回用预约上的几个时间点拼一条。 -->
+        <reservation-timeline :reservation-id="detailRow.id" :fallback="detailRow" />
       </div>
     </el-drawer>
   </div>
@@ -188,6 +148,7 @@
 import { getReservationPageListApi, cancelReservationApi } from '@/api/reservation'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import ReservationTimeline from '@/components/ReservationTimeline.vue'
 
 const statusType = (status) => {
   return (
@@ -222,12 +183,6 @@ const total = ref(0)
 
 const detailVisible = ref(false)
 const detailRow = ref(null)
-
-// 后端返回的是 ISO 格式（2026-10-25T09:00:00），时间线里只显示到分钟。
-const formatTime = (value) => {
-  if (!value) return ''
-  return String(value).replace('T', ' ').slice(0, 16)
-}
 
 const load = async () => {
   loading.value = true
@@ -302,13 +257,6 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 600;
   color: var(--app-text-primary);
-}
-
-.timeline-note {
-  margin-top: 4px;
-  font-size: 13px;
-  color: var(--app-text-secondary);
-  line-height: 1.5;
 }
 
 @media (max-width: 767px) {

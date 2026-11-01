@@ -39,6 +39,13 @@ export function auditReservationApi(id, status) {
   })
 }
 
+export function getReservationLogsApi(id) {
+  return request({
+    url: `/api/reservation/${id}/logs`,
+    method: 'get'
+  })
+}
+
 export function forceCancelReservationApi(id, reason) {
   return request({
     url: `/api/reservation/${id}/force-cancel`,

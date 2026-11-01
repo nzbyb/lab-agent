@@ -2,8 +2,11 @@
   <div>
     <el-card>
       <template #header>
-        <div class="app-card-title">
-          <span>预约审核</span>
+        <div class="panel-head">
+          <div class="app-card-title">
+            <span>预约审核</span>
+          </div>
+          <el-button :icon="Download" @click="openExport">导出报表</el-button>
         </div>
       </template>
       <div class="app-search-bar">
@@ -54,8 +57,9 @@
             {{ row.cancel_reason || '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="260">
+        <el-table-column label="操作" width="320">
           <template #default="{ row }">
+            <el-button type="primary" text bg @click="openDetail(row)">详情</el-button>
             <template v-if="row.status === 0">
               <el-button type="success" text bg @click="handleAudit(row, 1)">通过</el-button>
               <el-button type="danger" text bg @click="handleAudit(row, 2)">拒绝</el-button>
@@ -112,6 +116,72 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 详情抽屉：把一条预约的完整经历摆出来。
+         管理员看"是谁、什么时候、以什么理由"动的这条预约，就靠这条时间线。 -->
+    <el-drawer v-model="detailVisible" title="预约详情" size="min(420px, 100vw)">
+      <div v-if="detailRow">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="实验室">
+            {{ detailRow.lab_name }}
+          </el-descriptions-item>
+          <el-descriptions-item label="设备">
+            {{ detailRow.equipment_name || '整间实验室' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="预约人">
+            {{ detailRow.user_name || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="预约日期">
+            {{ detailRow.date }}
+          </el-descriptions-item>
+          <el-descriptions-item label="预约时段">
+            {{ detailRow.start_time }} - {{ detailRow.end_time }}
+          </el-descriptions-item>
+          <el-descriptions-item label="当前状态">
+            <el-tag :type="statusType(detailRow.status)">
+              {{ statusText(detailRow.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="备注">
+            {{ detailRow.remark || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="timeline-title">状态时间线</div>
+        <reservation-timeline :reservation-id="detailRow.id" :fallback="detailRow" />
+      </div>
+    </el-drawer>
+
+    <el-dialog v-model="exportVisible" title="导出预约报表" width="440px">
+      <el-form label-width="84px" class="app-dialog-form">
+        <el-form-item label="预约日期">
+          <el-date-picker
+            v-model="exportRange"
+            type="daterange"
+            value-format="YYYY-MM-DD"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            class="export-range"
+          />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-select v-model="exportStatus" placeholder="全部状态" clearable class="export-range">
+            <el-option :value="0" label="待审核" />
+            <el-option :value="1" label="已通过" />
+            <el-option :value="2" label="已拒绝" />
+            <el-option :value="3" label="已取消" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div class="export-tip">
+        不选日期就导出全部；文件为 .xlsx，包含「预约明细」和「汇总」两个工作表。
+      </div>
+      <template #footer>
+        <el-button @click="exportVisible = false">取消</el-button>
+        <el-button type="primary" :loading="exporting" @click="submitExport">导出</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup>
@@ -120,8 +190,11 @@ import {
   auditReservationApi,
   forceCancelReservationApi
 } from '@/api/reservation'
+import { exportReservationsApi } from '@/api/statistics'
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessageBox, ElMessage } from 'element-plus'
+import { Download } from '@element-plus/icons-vue'
+import ReservationTimeline from '@/components/ReservationTimeline.vue'
 const statusType = (status) => {
   return (
     {
@@ -156,6 +229,72 @@ const cancelDialogVisible = ref(false)
 const cancelTarget = ref(null)
 const cancelReason = ref('')
 const cancelSubmitting = ref(false)
+
+// 详情抽屉
+const detailVisible = ref(false)
+const detailRow = ref(null)
+
+// 导出报表
+const exportVisible = ref(false)
+const exportRange = ref([])
+const exportStatus = ref(null)
+const exporting = ref(false)
+
+const openDetail = (row) => {
+  detailRow.value = row
+  detailVisible.value = true
+}
+
+const openExport = () => {
+  exportVisible.value = true
+}
+
+// 后端在 Content-Disposition 里给了中文文件名（RFC 5987 的 filename*）。
+// 拿不到就退回一个固定名字，别让浏览器存成 "download"。
+const parseFilename = (disposition) => {
+  if (!disposition) return ''
+  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded[1])
+    } catch {
+      // 解码失败就走下面的普通 filename
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(disposition)
+  return plain ? plain[1] : ''
+}
+
+const submitExport = async () => {
+  exporting.value = true
+  try {
+    const [dateFrom, dateTo] = exportRange.value || []
+    const res = await exportReservationsApi({
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+      // 0 是合法状态（待审核），不能用真假值判断要不要传
+      status:
+        exportStatus.value === null || exportStatus.value === ''
+          ? undefined
+          : exportStatus.value
+    })
+    const filename = parseFilename(res.headers['content-disposition']) || '预约报表.xlsx'
+    const url = window.URL.createObjectURL(res.data)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+    exportVisible.value = false
+  } catch {
+    // 拦截器已经提示过了（后端返回 JSON 错误时也会走到那里）
+  } finally {
+    exporting.value = false
+  }
+}
 
 const load = async () => {
   loading.value = true
@@ -222,10 +361,34 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 /* 弹窗里的预约信息可能较长，允许换行，别把 label 挤变形 */
 .cancel-target {
   display: inline-block;
   line-height: 1.5;
   word-break: break-all;
+}
+
+.timeline-title {
+  margin: 24px 0 14px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--app-text-primary);
+}
+
+.export-range {
+  width: 100%;
+}
+
+.export-tip {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--app-text-secondary);
 }
 </style>

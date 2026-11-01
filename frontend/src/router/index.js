@@ -30,6 +30,19 @@ const router = createRouter({
           name: 'Notifications',
           component: () => import('@/views/NotificationList.vue')
         },
+        // 公告所有角色都能看（管理员还能在同一页发布/编辑/删除），所以不加 role
+        {
+          path: 'announcements',
+          name: 'AnnouncementList',
+          component: () => import('@/views/AnnouncementList.vue')
+        },
+        // 收藏与浏览记录的入口是从实验室列表点进去的，跟 lab-list 一样只对学生露出菜单；
+        // 路由本身不拦角色——管理员偶尔想收藏也没必要拒绝
+        {
+          path: 'favorites',
+          name: 'FavoriteList',
+          component: () => import('@/views/FavoriteList.vue')
+        },
 
         // 下面这 4 条的 meta.role 名单，跟后端 dependencies/auth.py 里
         // get_current_admin 的名单严格一致：后端只允许 admin 调用的那几组接口，
@@ -58,6 +71,12 @@ const router = createRouter({
           path: 'user',
           name: 'User',
           component: () => import('@/views/User.vue'),
+          meta: { role: 'admin' }
+        },
+        {
+          path: 'audit-logs',
+          name: 'AuditLog',
+          component: () => import('@/views/AuditLog.vue'),
           meta: { role: 'admin' }
         },
 

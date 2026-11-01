@@ -39,6 +39,19 @@
           <span class="lab-state" :class="`is-${labOpenState(item).type}`">
             <span class="lab-state-dot"></span>{{ labOpenState(item).text }}
           </span>
+          <!-- 收藏按钮压右上角。状态别只看颜色：实心星 = 已收藏，空心星 = 未收藏 -->
+          <button
+            type="button"
+            class="lab-fav"
+            :class="{ 'is-active': favoriteIds.includes(item.id) }"
+            :aria-label="favoriteIds.includes(item.id) ? '取消收藏' : '收藏'"
+            @click.stop="toggleFavorite(item)"
+          >
+            <el-icon>
+              <StarFilled v-if="favoriteIds.includes(item.id)" />
+              <Star v-else />
+            </el-icon>
+          </button>
         </div>
 
         <div class="lab-body">
@@ -96,7 +109,12 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { getLab, getLabPageListApi } from '@/api/lab'
-import { Search, Location, User, Clock, OfficeBuilding } from '@element-plus/icons-vue'
+import {
+  addFavoriteApi,
+  getFavoriteIdsApi,
+  removeFavoriteApi
+} from '@/api/favorite'
+import { Search, Location, User, Clock, OfficeBuilding, Star, StarFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 import ReserveDialog from '@/components/ReserveDialog.vue'
@@ -112,6 +130,29 @@ const params = reactive({
 const loading = ref(false)
 const tableData = ref([])
 const total = ref(0)
+
+// 已收藏的实验室 id。只存 id 而不是整份列表：本页只需要判断"这颗心是不是实心"，
+// 完整的收藏列表在「我的收藏」页再看。
+const favoriteIds = ref([])
+
+const loadFavoriteIds = async () => {
+  try {
+    const res = await getFavoriteIdsApi()
+    if (res.code === 200) favoriteIds.value = res.data || []
+  } catch {
+    // 收藏拉不到只影响星星的初始状态，不挡住实验室列表
+  }
+}
+
+const toggleFavorite = async (lab) => {
+  const saved = favoriteIds.value.includes(lab.id)
+  const res = saved ? await removeFavoriteApi(lab.id) : await addFavoriteApi(lab.id)
+  if (res.code !== 200) return
+  favoriteIds.value = saved
+    ? favoriteIds.value.filter((id) => id !== lab.id)
+    : [...favoriteIds.value, lab.id]
+  ElMessage.success(saved ? '已取消收藏' : '已收藏')
+}
 
 const handleViewEquipment = (lab) => {
   router.push({ path: '/manager/lab-equipment', query: { lab_id: lab.id } })
@@ -170,6 +211,7 @@ const handleReset = () => {
 
 onMounted(() => {
   load()
+  loadFavoriteIds()
 })
 </script>
 
@@ -294,6 +336,40 @@ onMounted(() => {
 }
 .lab-state.is-info {
   background: rgba(100, 116, 139, 0.9);
+}
+
+/* 收藏按钮：圆形毛玻璃底，压在封面右上角。给 40px 的点击区但图标只占一半，
+   手指点起来不费劲；aria-label 跟着状态变，读屏也能知道现在点会发生什么。 */
+.lab-fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  font-size: 18px;
+  color: #fff;
+  cursor: pointer;
+  background: rgba(15, 23, 42, 0.35);
+  backdrop-filter: blur(6px);
+  transition:
+    background-color 0.2s,
+    color 0.2s,
+    transform 0.2s;
+}
+
+.lab-fav:hover {
+  background: rgba(15, 23, 42, 0.55);
+  transform: scale(1.06);
+}
+
+.lab-fav.is-active {
+  color: #fbbf24;
 }
 
 /* ---------------------------------------------------------------------------
