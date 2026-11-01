@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.common.response import Response
 from app.dependencies.auth import get_current_user
+from app.common.exceptions import BusinessException
 from app.limiter import enforce_login_account_limit, limiter
 from app.models.user import User
-from app.services import auth_service
+from app.services import audit_service, auth_service
 
 router = APIRouter(prefix="/auth", tags=["权限验证"])
 
@@ -30,8 +31,25 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     # 按 IP 卡太紧会把一群互不相干的人一起锁住——这正是要修的"被误伤"。
     enforce_login_account_limit(request, data.username)
 
-    result = auth_service.login(db, data)
+    try:
+        result = auth_service.login(db, data)
+    except BusinessException as exc:
+        # 失败也要留痕：连着 5 次失败被锁，日志里得看得出是谁在试。
+        # 这时可能根本没有这个用户，所以只能记对方输入的账号名。
+        audit_service.record(
+            category=audit_service.CATEGORY_LOGIN,
+            action="login.failure",
+            username=data.username,
+            detail=exc.message,
+        )
+        raise
 
+    audit_service.record(
+        category=audit_service.CATEGORY_LOGIN,
+        action="login.success",
+        user=result.user,
+        detail="账号密码登录",
+    )
     return Response.success(
         message="登录成功",
         data=result,
@@ -44,6 +62,12 @@ def logout(
 ):
     """退出登录。必须带当前令牌；返回之后这枚令牌就作废了。"""
     auth_service.logout(db, current_user)
+    audit_service.record(
+        category=audit_service.CATEGORY_LOGIN,
+        action="login.logout",
+        user=current_user,
+        detail="主动退出登录",
+    )
     return Response.success(message="已退出登录")
 
 
@@ -54,7 +78,23 @@ def login_by_phone(
 ):
     # 跟账号登录共用同一条「IP + 标识」额度；标识这里是手机号。
     enforce_login_account_limit(request, data.phone)
-    result = auth_service.login_by_phone(db, data)
+    try:
+        result = auth_service.login_by_phone(db, data)
+    except BusinessException as exc:
+        # 手机号可能没绑过任何账号，日志里只能记这个号码本身。
+        audit_service.record(
+            category=audit_service.CATEGORY_LOGIN,
+            action="login.failure",
+            username=data.phone,
+            detail=f"手机号登录：{exc.message}",
+        )
+        raise
+    audit_service.record(
+        category=audit_service.CATEGORY_LOGIN,
+        action="login.success",
+        user=result.user,
+        detail="手机号密码登录",
+    )
     return Response.success(message="登录成功", data=result)
 
 
@@ -75,7 +115,22 @@ def login_with_email_code(
     request: Request, data: EmailCodeLoginRequest, db: Session = Depends(get_db)
 ):
     enforce_login_account_limit(request, data.email)
-    result = auth_service.login_with_email_code(db, data)
+    try:
+        result = auth_service.login_with_email_code(db, data)
+    except BusinessException as exc:
+        audit_service.record(
+            category=audit_service.CATEGORY_LOGIN,
+            action="login.failure",
+            username=data.email,
+            detail=f"邮箱验证码登录：{exc.message}",
+        )
+        raise
+    audit_service.record(
+        category=audit_service.CATEGORY_LOGIN,
+        action="login.success",
+        user=result.user,
+        detail="邮箱验证码登录",
+    )
     return Response.success(message="登录成功", data=result)
 
 
@@ -93,7 +148,13 @@ def send_register_email_code(
 @limiter.limit("5/minute")
 def register(request: Request, data: RegisterRequest, db: Session = Depends(get_db)):
     auth_service.register(db, data)
-
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.register",
+        username=data.username,
+        target_type="user",
+        detail="自助注册",
+    )
     return Response.success(
         message="注册成功",
     )
@@ -127,4 +188,10 @@ def reset_password(
     # 不限制就能拿它当撞库/耗 CPU 的入口。
     enforce_login_account_limit(request, data.email)
     auth_service.reset_password_with_code(db, data)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.password_reset",
+        username=data.email,
+        detail="用邮箱验证码找回密码",
+    )
     return Response.success(message="密码已重置，请用新密码登录")

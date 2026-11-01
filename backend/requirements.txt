@@ -21,3 +21,5 @@ redis==5.2.1
 # 错误监控（可选）。只有 backend/.env 里填了 SENTRY_DSN 才 import，
 # 不填的话连加载都不会加载。
 sentry-sdk==2.20.0
+# 预约报表导出（.xlsx）。纯 Python，不依赖 Office
+openpyxl==3.1.5

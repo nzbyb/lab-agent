@@ -9,6 +9,9 @@ from app.api.statistics import router as statistics_router
 from app.api.ai import router as ai_router
 from app.api.chat import router as chat_router
 from app.api.notification import router as notification_router
+from app.api.audit import router as audit_router
+from app.api.favorite import router as favorite_router
+from app.api.announcement import router as announcement_router
 
 api = APIRouter(prefix="/api")
 
@@ -22,3 +25,6 @@ api.include_router(statistics_router)
 api.include_router(ai_router)
 api.include_router(chat_router)
 api.include_router(notification_router)
+api.include_router(audit_router)
+api.include_router(favorite_router)
+api.include_router(announcement_router)

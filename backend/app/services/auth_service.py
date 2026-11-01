@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta
+from math import ceil
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -17,6 +20,51 @@ from app.utils.contact import normalize_optional_email, normalize_phone
 from app.utils.password import verify_password, hash_password
 from app.utils.jwt import create_access_token
 from app.common.exceptions import BusinessException
+
+
+# 连续错 5 次锁 15 分钟。跟限流（5 次/分钟，按 IP+账号）是两道不同的闸：
+# 限流防的是"一分钟内猛打"，锁定防的是"慢慢试、试够一整晚"。
+MAX_LOGIN_FAILURES = 5
+LOGIN_LOCK_MINUTES = 15
+
+
+def _lock_minutes_left(user: User, now: datetime | None = None) -> int:
+    """还要锁几分钟；没锁返回 0。
+
+    用 ceil 而不是四舍五入：还剩 30 秒时应该报"1 分钟"，报"0 分钟"等于
+    告诉用户"可以试了"，但下一次请求仍然是拒绝的。
+    """
+    if not user.locked_until:
+        return 0
+    now = now or datetime.now()
+    seconds = (user.locked_until - now).total_seconds()
+    return max(0, ceil(seconds / 60))
+
+
+def _ensure_not_locked(user: User) -> None:
+    left = _lock_minutes_left(user)
+    if left:
+        raise BusinessException(message=f"密码错误次数过多，请 {left} 分钟后再试")
+
+
+def _record_login_failure(db: Session, user: User) -> None:
+    """记一次失败，够了就上锁。
+
+    **必须单独 commit**：调用方紧接着要抛异常，异常会把整个会话回滚，
+    不先落库的话这次失败就白记了，锁永远凑不满。
+    """
+    user.failed_login_count = (user.failed_login_count or 0) + 1
+    if user.failed_login_count >= MAX_LOGIN_FAILURES:
+        user.locked_until = datetime.now() + timedelta(minutes=LOGIN_LOCK_MINUTES)
+        # 计数归零：锁解除后重新给满 5 次机会，否则解锁第一次错就又锁上。
+        user.failed_login_count = 0
+    db.commit()
+
+
+def _clear_login_failure(user: User) -> None:
+    """登录成功清零。不单独 commit，跟调用方那笔一起落地。"""
+    user.failed_login_count = 0
+    user.locked_until = None
 
 
 def _login_response(user: User) -> LoginResponse:
@@ -44,18 +92,33 @@ def logout(db: Session, current_user: User) -> None:
 def login(db: Session, data: LoginRequest):
     user = db.query(User).filter(User.username == data.username).first()
     # 验证账号以及密码是否正确
-    if not user or not verify_password(data.password, user.password):
+    if not user:
         raise BusinessException(message="账号或密码错误")
+    # 锁定判断放在密码校验之前：锁着的账号连"密码对不对"都不该告诉对方。
+    _ensure_not_locked(user)
+    if not verify_password(data.password, user.password):
+        _record_login_failure(db, user)
+        raise BusinessException(message="账号或密码错误")
+    if user.failed_login_count or user.locked_until:
+        _clear_login_failure(user)
+        db.commit()
     return _login_response(user)
 
 
 def login_by_phone(db: Session, data: PhoneLoginRequest):
     phone = normalize_phone(data.phone)
     user = db.query(User).filter(User.phone == phone).first()
-    if not user or not verify_password(data.password, user.password):
+    if not user:
         # 跟账号登录一样，不区分"手机号不存在"和"密码错了"：否则可以拿它
         # 枚举出哪些手机号绑过账号。
         raise BusinessException(message="手机号或密码错误")
+    _ensure_not_locked(user)
+    if not verify_password(data.password, user.password):
+        _record_login_failure(db, user)
+        raise BusinessException(message="手机号或密码错误")
+    if user.failed_login_count or user.locked_until:
+        _clear_login_failure(user)
+        db.commit()
     return _login_response(user)
 
 
@@ -89,6 +152,9 @@ def reset_password_with_code(db: Session, data: PasswordResetRequest):
         raise BusinessException(message="账号被禁用")
     user.password = hash_password(data.new_password)
     user.token_version = (user.token_version or 0) + 1
+    # 邮箱验证码本身就证明了身份，顺带解锁：否则刚重置完密码的人
+    # 还要再等 15 分钟才能登进来，会以为重置失败了。
+    _clear_login_failure(user)
     db.commit()
 
 

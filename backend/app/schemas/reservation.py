@@ -131,3 +131,17 @@ class FreeSlotResponse(BaseModel):
     close_time: str
     slots: list[FreeSlotItem] = []
     busy: list[FreeSlotItem] = []
+
+
+class ReservationLogResponse(BaseModel):
+    """预约时间线的一条记录。"""
+
+    id: int
+    action: str
+    from_status: int | None = None
+    to_status: int | None = None
+    operator_name: str | None = None
+    reason: str | None = None
+    create_time: datetime
+
+    model_config = ConfigDict(from_attributes=True)

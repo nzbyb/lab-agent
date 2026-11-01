@@ -27,6 +27,10 @@ from app.models.reservation import Reservation  # noqa: F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: F401
 from app.models.verification import VerificationCode  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
+from app.models.audit import AuditLog  # noqa: F401
+from app.models.reservation_log import ReservationLog  # noqa: F401
+from app.models.favorite import Favorite, LabView  # noqa: F401
+from app.models.announcement import Announcement  # noqa: F401
 
 config = context.config
 

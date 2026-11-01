@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import traceback
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
@@ -31,7 +31,11 @@ from app.models.reservation import Reservation  # noqa: F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: F401
 from app.models.verification import VerificationCode  # noqa: F401
 from app.models.notification import Notification  # noqa: F401
-from app.services import kb_service, reservation_service  # noqa: F401
+from app.models.audit import AuditLog  # noqa: F401
+from app.models.reservation_log import ReservationLog  # noqa: F401
+from app.models.favorite import Favorite, LabView  # noqa: F401
+from app.models.announcement import Announcement  # noqa: F401
+from app.services import audit_service, kb_service, reservation_service  # noqa: F401
 
 
 @asynccontextmanager
@@ -101,6 +105,19 @@ app.add_middleware(
 )
 
 app.include_router(api)
+
+
+@app.middleware("http")
+async def capture_request_ip(request: Request, call_next):
+    """把来访 IP 放进 ContextVar，供审计日志取用。
+
+    不逐个往几十个接口加 Request 参数：那样每加一个接口都可能漏，而且
+    service 层拿不到 Request。中间件塞一次，谁都能读。
+    """
+    ip = request.client.host if request.client else None
+    with audit_service.capture_ip(ip):
+        return await call_next(request)
+
 
 app.add_exception_handler(BusinessException, business_exception_hadler)
 app.add_exception_handler(HTTPException, http_exception_hadler)

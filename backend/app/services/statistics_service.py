@@ -1,8 +1,13 @@
 from datetime import datetime, time, timedelta
+from io import BytesIO
 
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.utils import get_column_letter
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.common.exceptions import BusinessException
 from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.reservation import Reservation
@@ -213,3 +218,145 @@ def get_admin_workbench(db: Session) -> AdminWorkbenchResponse:
             for item in rows
         ],
     )
+
+
+# ---------------------------------------------------------------------------
+# 报表导出
+# ---------------------------------------------------------------------------
+
+# 一次最多导这么多行。超了直接报错而不是悄悄截断：截断的报表看起来"就是这些"，
+# 拿去做统计会得出错误结论，比导不出来更糟。
+_EXPORT_LIMIT = 10000
+
+_STATUS_TEXT = {0: "待审核", 1: "已通过", 2: "已拒绝", 3: "已取消"}
+
+_EXPORT_HEADERS = [
+    ("预约ID", 10),
+    ("预约人", 14),
+    ("账号", 16),
+    ("实验室", 20),
+    ("设备", 18),
+    ("预约日期", 14),
+    ("开始时间", 10),
+    ("结束时间", 10),
+    ("状态", 10),
+    ("备注", 30),
+    ("提交时间", 20),
+    ("审核时间", 20),
+    ("取消时间", 20),
+    ("取消原因", 30),
+]
+
+
+def _normalize_export_date(value: str | None, label: str) -> str | None:
+    """校验并补零。date 列是字符串，比较全靠格式统一。"""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        raise BusinessException(message=f"{label}格式应为 YYYY-MM-DD")
+
+
+def _fmt(value: datetime | None) -> str:
+    return value.strftime("%Y-%m-%d %H:%M:%S") if value else ""
+
+
+def export_reservations(
+    db: Session,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    status: int | None = None,
+) -> tuple[bytes, str]:
+    """导出预约明细，返回 (文件内容, 文件名)。
+
+    筛的是 Reservation.date（用户来用的那天），不是提交时间——管理员做周报时
+    关心的是"这周各天来了多少人"，跟哪天点的预约无关。
+    """
+    start = _normalize_export_date(date_from, "开始日期")
+    end = _normalize_export_date(date_to, "结束日期")
+    if start and end and start > end:
+        raise BusinessException(message="开始日期不能晚于结束日期")
+
+    query = db.query(Reservation).options(
+        # 一次把关联表带出来，避免逐行查 user/lab/equipment（N+1）
+        joinedload(Reservation.user),
+        joinedload(Reservation.lab),
+        joinedload(Reservation.equipment),
+    )
+    if start:
+        query = query.filter(Reservation.date >= start)
+    if end:
+        query = query.filter(Reservation.date <= end)
+    if status is not None:
+        query = query.filter(Reservation.status == status)
+
+    total = query.count()
+    if total > _EXPORT_LIMIT:
+        raise BusinessException(
+            message=f"符合条件的预约有 {total} 条，超过单次导出上限 {_EXPORT_LIMIT} 条，请缩小日期范围"
+        )
+
+    items = query.order_by(
+        Reservation.date.asc(),
+        Reservation.start_time.asc(),
+        # 同一天的同一时刻可能有多条，用 id 兜底，导两次顺序才一致
+        Reservation.id.asc(),
+    ).all()
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "预约明细"
+    sheet.append([header for header, _ in _EXPORT_HEADERS])
+
+    header_font = Font(bold=True)
+    header_fill = PatternFill("solid", fgColor="DDEBF7")
+    for cell in sheet[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+    for index, (_, width) in enumerate(_EXPORT_HEADERS, start=1):
+        sheet.column_dimensions[get_column_letter(index)].width = width
+    # 表头冻结：几千行往下翻时还知道每一列是什么
+    sheet.freeze_panes = "A2"
+
+    for item in items:
+        sheet.append(
+            [
+                item.id,
+                (item.user.name or item.user.username) if item.user else "",
+                item.user.username if item.user else "",
+                item.lab.name if item.lab else "",
+                item.equipment.name if item.equipment else "",
+                item.date,
+                item.start_time,
+                item.end_time,
+                _STATUS_TEXT.get(item.status, str(item.status)),
+                item.remark or "",
+                _fmt(item.create_time),
+                _fmt(item.audit_time),
+                _fmt(item.cancel_time),
+                item.cancel_reason or "",
+            ]
+        )
+
+    summary = workbook.create_sheet("汇总")
+    summary.append(["状态", "数量"])
+    for cell in summary[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+    summary.column_dimensions["A"].width = 12
+    summary.column_dimensions["B"].width = 10
+    counts = {}
+    for item in items:
+        counts[item.status] = counts.get(item.status, 0) + 1
+    for code in (0, 1, 2, 3):
+        summary.append([_STATUS_TEXT[code], counts.get(code, 0)])
+    summary.append(["合计", len(items)])
+
+    buffer = BytesIO()
+    workbook.save(buffer)
+
+    range_text = (
+        f"{start or '最早'}至{end or '最新'}" if (start or end) else "全部"
+    )
+    return buffer.getvalue(), f"预约报表_{range_text}.xlsx"

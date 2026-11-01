@@ -1,6 +1,8 @@
+from datetime import datetime
+
 from app.database import Base
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, UniqueConstraint
+from sqlalchemy import DateTime, String, UniqueConstraint
 
 
 class User(Base):
@@ -34,4 +36,18 @@ class User(Base):
         default=0,
         server_default="0",
         comment="令牌版本号: 改密码/退出登录时+1, 使此前签发的令牌全部失效",
+    )
+    # 连续密码错误锁定。计数和"锁到什么时候"分开存：
+    # 只存计数的话，进程重启或请求并发都会把"还剩多久"重新算错；
+    # 只存时间的话，就没法在锁定解除后区分"刚错了一次"和"从没错过"。
+    #
+    # 两列都必须有 Python 端 default：register / create_user / make_user 都是
+    # 直接 User(...) 不带这两个字段，少了 default 会撞 NOT NULL。
+    failed_login_count: Mapped[int] = mapped_column(
+        default=0,
+        server_default="0",
+        comment="连续密码错误次数, 登录成功后清零",
+    )
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="锁定到此刻为止, 空表示未锁定"
     )

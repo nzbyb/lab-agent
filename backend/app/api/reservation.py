@@ -10,7 +10,7 @@ from app.schemas.reservation import (
     ForceCancelRequest,
     ReservationCreateRequest,
 )
-from app.services import reservation_service
+from app.services import audit_service, reservation_service
 
 router = APIRouter(prefix="/reservation", tags=["预约相关接口"])
 
@@ -61,6 +61,17 @@ def create_reservation(
     return Response.success()
 
 
+@router.get("/{reservation_id}/logs")
+def get_reservation_logs(
+    reservation_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    # 放在只读段里：本人和管理员都能看，归属校验在 service 里。
+    res = reservation_service.get_reservation_logs(db, current_user, reservation_id)
+    return Response.success(data=res)
+
+
 @router.put("/{reservation_id}/cancel")
 def cancel_reservation(
     reservation_id: int,
@@ -78,7 +89,17 @@ def audit_reservation(
     current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    reservation_service.audit_reservation(db, reservation_id, data.status)
+    reservation_service.audit_reservation(
+        db, reservation_id, data.status, operator=current_user
+    )
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="reservation.approve" if data.status == 1 else "reservation.reject",
+        user=current_user,
+        target_type="reservation",
+        target_id=reservation_id,
+        detail="审核通过" if data.status == 1 else "审核驳回",
+    )
     return Response.success()
 
 
@@ -89,5 +110,15 @@ def force_cancel_reservation(
     current_user: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
-    reservation_service.force_cancel_reservation(db, reservation_id, data.reason)
+    reservation_service.force_cancel_reservation(
+        db, reservation_id, data.reason, operator=current_user
+    )
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="reservation.force_cancel",
+        user=current_user,
+        target_type="reservation",
+        target_id=reservation_id,
+        detail=f"强制取消，原因：{data.reason}",
+    )
     return Response.success(message="预约已强制取消")

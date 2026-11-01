@@ -12,11 +12,13 @@ from app.database import SessionLocal, engine
 from app.models.equipment import Equipment
 from app.models.lab import Lab
 from app.models.reservation import Reservation
+from app.models.reservation_log import ReservationLog
 from app.models.user import User
 from app.schemas.reservation import (
     FreeSlotItem,
     FreeSlotResponse,
     ReservationCreateRequest,
+    ReservationLogResponse,
     ReservationResponse,
     ScheduleDay,
     WeekScheduleResponse,
@@ -28,6 +30,37 @@ from app.services import lab_service, notification_service
 
 # 超时自动取消的原因文案。统计里也按这句话认"自动取消"，别处不要再手写一份。
 AUTO_CANCEL_REASON = "超时未审核，系统自动取消"
+
+
+def _log_change(
+    db: Session,
+    *,
+    reservation_id: int,
+    action: str,
+    from_status: int | None,
+    to_status: int | None,
+    operator: User | None = None,
+    operator_name: str | None = None,
+    reason: str | None = None,
+) -> None:
+    """往时间线里记一笔。
+
+    **不 commit**：必须和预约状态本身同一个事务。否则会出现"状态变了、
+    时间线没有"或者反过来——两种对不上账都很难查。
+    """
+    db.add(
+        ReservationLog(
+            reservation_id=reservation_id,
+            action=action,
+            from_status=from_status,
+            to_status=to_status,
+            operator_id=getattr(operator, "id", None),
+            operator_name=operator_name
+            or getattr(operator, "name", None)
+            or getattr(operator, "username", None),
+            reason=reason,
+        )
+    )
 
 
 def _reservation_summary(item: Reservation) -> str:
@@ -288,6 +321,16 @@ def create_reservation(db: Session, current_user: User, data: ReservationCreateR
             status=0,
         )
         db.add(reservation_model)
+        # flush 一次只为拿到自增主键，时间线要靠它关联；还没有 commit。
+        db.flush()
+        _log_change(
+            db,
+            reservation_id=reservation_model.id,
+            action="create",
+            from_status=None,
+            to_status=0,
+            operator=current_user,
+        )
         db.commit()
 
 
@@ -472,16 +515,25 @@ def cancel_reservation(db: Session, current_user: User, reservation_id: int):
     elif item.status != 0:
         raise BusinessException(message="当前状态的预约不能取消")
 
+    previous_status = item.status
     item.status = 3
     item.cancel_time = now
     # 本人取消不填原因：是谁取消的已经由"操作人就是预约人"确定了，
     # 再写一句"用户取消"只是噪音。管理员强制取消才必须有原因。
     item.cancel_reason = None
+    _log_change(
+        db,
+        reservation_id=item.id,
+        action="cancel",
+        from_status=previous_status,
+        to_status=3,
+        operator=current_user,
+    )
     db.commit()
 
 
 def force_cancel_reservation(
-    db: Session, reservation_id: int, reason: str
+    db: Session, reservation_id: int, reason: str, operator: User | None = None
 ) -> None:
     """管理员强制取消。待审核和已通过都能取消，原因会留给用户看。
 
@@ -496,9 +548,21 @@ def force_cancel_reservation(
         raise BusinessException(message="当前状态的预约不能取消")
 
     now = datetime.now()
+    previous_status = item.status
     item.status = 3
     item.cancel_time = now
     item.cancel_reason = reason
+    _log_change(
+        db,
+        reservation_id=item.id,
+        action="force_cancel",
+        from_status=previous_status,
+        to_status=3,
+        operator=operator,
+        # 老调用方（测试）不传 operator，退回"管理员"比留空更像话。
+        operator_name=None if operator else "管理员",
+        reason=reason,
+    )
     summary = _reservation_summary(item)
     notification = notification_service.create_notification(
         db,
@@ -516,7 +580,9 @@ def force_cancel_reservation(
     notification_service.dispatch_email(notification_id)
 
 
-def audit_reservation(db: Session, reservation_id: int, status: int):
+def audit_reservation(
+    db: Session, reservation_id: int, status: int, operator: User | None = None
+):
     if status not in [1, 2]:
         raise BusinessException(message="审核状态不合法")
     item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
@@ -527,6 +593,15 @@ def audit_reservation(db: Session, reservation_id: int, status: int):
 
     item.status = status
     item.audit_time = datetime.now()
+    _log_change(
+        db,
+        reservation_id=item.id,
+        action="approve" if status == 1 else "reject",
+        from_status=0,
+        to_status=status,
+        operator=operator,
+        operator_name=None if operator else "管理员",
+    )
     summary = _reservation_summary(item)
     if status == 1:
         type_ = notification_service.TYPE_APPROVED
@@ -575,6 +650,17 @@ def expire_pending_reservations():
                 # 自动取消也要写原因：否则用户只看到"已取消"，会以为是管理员
                 # 动的手，转头去问人。写清楚是系统超时，省一轮扯皮。
                 item.cancel_reason = AUTO_CANCEL_REASON
+                _log_change(
+                    db,
+                    reservation_id=item.id,
+                    action="auto_cancel",
+                    from_status=0,
+                    to_status=3,
+                    # 没有操作人：这是后台扫描干的，时间线上要显示成"系统"，
+                    # 否则用户会以为是某个管理员动的。
+                    operator_name="系统",
+                    reason=AUTO_CANCEL_REASON,
+                )
                 summary = _reservation_summary(item)
                 notifications.append(
                     notification_service.create_notification(
@@ -607,3 +693,24 @@ async def run_expire_scan():
             await asyncio.sleep(60)
     except asyncio.CancelledError:
         return
+
+
+def get_reservation_logs(db: Session, current_user: User, reservation_id: int):
+    """某条预约的经历。本人和管理员能看，别人不行。
+
+    管理员能看是必须的：强制取消、驳回都要有据可查，
+    而且用户来问"为什么取消我"时，管理员得能当场翻出时间线。
+    """
+    item = db.query(Reservation).filter(Reservation.id == reservation_id).first()
+    if not item:
+        raise BusinessException(message="预约记录不存在")
+    if item.user_id != current_user.id and current_user.role != "admin":
+        raise BusinessException(message="无权限查看该预约", code=403)
+
+    logs = (
+        db.query(ReservationLog)
+        .filter(ReservationLog.reservation_id == reservation_id)
+        .order_by(ReservationLog.id.asc())
+        .all()
+    )
+    return [ReservationLogResponse.model_validate(log) for log in logs]

@@ -7,7 +7,7 @@ from app.schemas.lab import (
     LabUpdateRequest,
     LabCreateRequest,
 )
-from app.services import kb_service, lab_service
+from app.services import audit_service, kb_service, lab_service
 from app.database import get_db
 
 router = APIRouter(prefix="/lab", tags=["实验室信息接口"])
@@ -61,6 +61,14 @@ def create_lab(
 ):
     res = lab_service.create_lab(db, data)
     _refresh_kb_doc()
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="lab.create",
+        user=current_user,
+        target_type="lab",
+        target_id=res.id,
+        detail=f"新增实验室「{res.name}」",
+    )
     return Response.success(data=res)
 
 
@@ -73,6 +81,15 @@ def update_lab(
 ):
     res = lab_service.update_lab(db, lab_id, data)
     _refresh_kb_doc()
+    # 开放时间改了会影响 AI 的回答，这条日志以后排查"AI 说的跟界面不一样"很有用。
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="lab.update",
+        user=current_user,
+        target_type="lab",
+        target_id=lab_id,
+        detail=f"修改实验室「{res.name}」",
+    )
     return Response.success(data=res)
 
 
@@ -84,4 +101,12 @@ def delete_lab(
 ):
     lab_service.delete_lab(db, lab_id)
     _refresh_kb_doc()
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="lab.delete",
+        user=current_user,
+        target_type="lab",
+        target_id=lab_id,
+        detail="删除实验室",
+    )
     return Response.success()

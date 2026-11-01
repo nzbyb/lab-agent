@@ -7,7 +7,7 @@ from app.schemas.equipment import (
     EquipmentUpdateRequest,
     EquipmentCreateRequest,
 )
-from app.services import equipment_service
+from app.services import audit_service, equipment_service
 from app.database import get_db
 
 router = APIRouter(prefix="/equipment", tags=["实验室信息接口"])
@@ -36,6 +36,14 @@ def create_equipment(
     db: Session = Depends(get_db),
 ):
     res = equipment_service.create_equipment(db, data)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="equipment.create",
+        user=current_user,
+        target_type="equipment",
+        target_id=res.id,
+        detail=f"新增设备「{res.name}」",
+    )
     return Response.success(data=res)
 
 
@@ -47,6 +55,14 @@ def update_equipment(
     db: Session = Depends(get_db),
 ):
     res = equipment_service.update_equipment(db, equipment_id, data)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="equipment.update",
+        user=current_user,
+        target_type="equipment",
+        target_id=equipment_id,
+        detail=f"修改设备「{res.name}」",
+    )
     return Response.success(data=res)
 
 
@@ -57,4 +73,12 @@ def delete_equipment(
     db: Session = Depends(get_db),
 ):
     equipment_service.delete_equipment(db, equipment_id)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="equipment.delete",
+        user=current_user,
+        target_type="equipment",
+        target_id=equipment_id,
+        detail="删除设备",
+    )
     return Response.success()

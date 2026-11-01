@@ -114,6 +114,10 @@ def reset_password(db: Session, user_id: int, data: AdminPasswordResetRequest):
 
     user.password = hash_password(data.new_password)
     user.token_version = (user.token_version or 0) + 1
+    # 顺带解锁：被锁的账号十有八九就是忘了密码，管理员重置完还锁着 15 分钟，
+    # 用户只会觉得"重置没用"。
+    user.failed_login_count = 0
+    user.locked_until = None
     db.commit()
 
 

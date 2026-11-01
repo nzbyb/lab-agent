@@ -4,7 +4,7 @@ from app.common.response import Response
 from app.models.user import User
 from app.dependencies.auth import get_current_user, get_current_admin
 from app.schemas.user import UserUpdateRequest, UserCreateRequest
-from app.services import user_service
+from app.services import audit_service, user_service
 from app.database import get_db
 from app.schemas.user import AdminPasswordResetRequest, PasswordUpdateRequest
 
@@ -33,6 +33,14 @@ def update_password(
     db: Session = Depends(get_db),
 ):
     user_service.update_password(db, current_user, data)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.password_change",
+        user=current_user,
+        target_type="user",
+        target_id=current_user.id,
+        detail="本人修改密码",
+    )
     return Response.success()
 
 
@@ -56,6 +64,14 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     res = user_service.create_user(db, data)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.create",
+        user=current_user,
+        target_type="user",
+        target_id=res.id,
+        detail=f"新建账号「{res.username}」",
+    )
     return Response.success(data=res)
 
 
@@ -67,6 +83,14 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     res = user_service.update_user(db, user_id, data)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.update",
+        user=current_user,
+        target_type="user",
+        target_id=user_id,
+        detail=f"修改账号「{res.username}」",
+    )
     return Response.success(data=res)
 
 
@@ -77,6 +101,14 @@ def create_user(
     db: Session = Depends(get_db),
 ):
     res = user_service.delete_user(db, user_id, current_user)
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.delete",
+        user=current_user,
+        target_type="user",
+        target_id=user_id,
+        detail="删除账号",
+    )
     return Response.success()
 
 
@@ -94,4 +126,13 @@ def reset_user_password(
     db: Session = Depends(get_db),
 ):
     user_service.reset_password(db, user_id, data)
+    # 管理员重置别人的密码是高风险动作，必须留痕。
+    audit_service.record(
+        category=audit_service.CATEGORY_OPERATION,
+        action="user.password_reset_by_admin",
+        user=current_user,
+        target_type="user",
+        target_id=user_id,
+        detail="管理员重置他人密码",
+    )
     return Response.success(message="密码已重置")

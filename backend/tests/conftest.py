@@ -111,6 +111,10 @@ from app.models.reservation import Reservation  # noqa: E402,F401
 from app.models.chat import ChatConversation, ChatMessage  # noqa: E402,F401
 from app.models.verification import VerificationCode  # noqa: E402,F401
 from app.models.notification import Notification  # noqa: E402,F401
+from app.models.audit import AuditLog  # noqa: E402,F401
+from app.models.reservation_log import ReservationLog  # noqa: E402,F401
+from app.models.favorite import Favorite, LabView  # noqa: E402,F401
+from app.models.announcement import Announcement  # noqa: E402,F401
 from app.models.user import User  # noqa: E402
 from app.schemas.reservation import ReservationCreateRequest  # noqa: E402
 from app.services import kb_service  # noqa: E402
